@@ -1,0 +1,15 @@
+{
+	"name": "apiki-gateway",
+	"version": "0.0.1",
+	"description": "A Gateway for APIs",
+	"scripts": {
+		"dev": "wrangler dev",
+		"deploy": "wrangler deploy --minify",
+		"cf-typegen": "wrangler types"
+	},
+	"devDependencies": {
+		"@types/node": "^22.14.0",
+		"typescript": "^5.8.2",
+		"wrangler": "^4.7.2"
+	}
+}
