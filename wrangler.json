@@ -16,7 +16,7 @@
 	"kv_namespaces": [
 		{
 			"binding": "APIKI_KV",
-			"id": "01999999999999999999999999999999"
+			"id": "${APIKI_KV_ID}"
 		}
 	]
 }
