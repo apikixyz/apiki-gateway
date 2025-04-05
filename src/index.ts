@@ -139,6 +139,11 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
 			return errorResponse(400, 'Name and email are required');
 		}
 
+		// Check if email is already registered
+		if (await isEmailRegistered(userData.email, env)) {
+			return errorResponse(409, 'Email address is already registered');
+		}
+
 		// Create the user
 		const result = await createUser(userData, env);
 
@@ -518,16 +523,23 @@ async function createUser(userData: CreateUserData, env: Env): Promise<{ userId:
 	// Create user - extract known properties first, then add remaining ones
 	const { name, email, plan = 'free', ...otherUserData } = userData;
 
+	// Normalize email (lowercase)
+	const normalizedEmail = email.toLowerCase();
+
 	const user: UserData = {
 		id: userId,
 		createdAt: new Date().toISOString(),
 		plan,
 		name,
-		email,
+		email: normalizedEmail, // Store normalized email
 		...otherUserData,
 	};
 
+	// Store user data
 	await env.APIKI_KV.put(`user:${userId}`, JSON.stringify(user));
+
+	// Store email reference for uniqueness checking
+	await env.APIKI_KV.put(`email:${normalizedEmail}`, userId);
 
 	// Set initial credits based on plan
 	const planCredits: Record<string, number> = {
@@ -545,6 +557,16 @@ async function createUser(userData: CreateUserData, env: Env): Promise<{ userId:
 	);
 
 	return { userId };
+}
+
+// Add a new function to check if an email is already registered
+async function isEmailRegistered(email: string, env: Env): Promise<boolean> {
+	// Create a normalized version of the email (lowercase)
+	const normalizedEmail = email.toLowerCase();
+
+	// Check if email exists in the system
+	const userId = await env.APIKI_KV.get(`email:${normalizedEmail}`);
+	return userId !== null;
 }
 
 // Export the handler for Cloudflare Workers
