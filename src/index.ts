@@ -344,6 +344,7 @@ async function deactivateApiKey(apiKey: string, env: Env): Promise<boolean> {
 
 async function validateApiKey(apiKey: string, env: Env): Promise<ApiKeyData | null> {
 	// Get API key data from KV
+	logDebug('validateApiKey', `Getting API key data`, { apiKey });
 	const keyData = (await env.APIKI_KV.get(`apikey:${apiKey}`, { type: 'json' })) as ApiKeyData | null;
 	if (!keyData) return null;
 
