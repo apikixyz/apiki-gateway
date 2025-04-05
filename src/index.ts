@@ -40,6 +40,14 @@ interface EndpointCosts {
 }
 
 async function handleRequest(request: Request, env: Env): Promise<Response> {
+	const url = new URL(request.url);
+	const path = url.pathname;
+
+	// Handle admin endpoints
+	if (path.startsWith('/admin/')) {
+		return handleAdminRequest(request, env);
+	}
+
 	// Skip OPTIONS requests (CORS preflight)
 	if (request.method === 'OPTIONS') {
 		return handleCors(request);
@@ -66,7 +74,6 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 		}
 
 		// Determine endpoint cost
-		const url = new URL(request.url);
 		const endpoint = url.pathname;
 		const cost = getEndpointCost(endpoint);
 
@@ -85,6 +92,193 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 		console.error('Apiki gateway error:', error);
 		return errorResponse(500, 'Gateway error');
 	}
+}
+
+// ADMIN REQUEST HANDLER
+
+async function handleAdminRequest(request: Request, env: Env): Promise<Response> {
+	// Check admin authentication
+	const adminKey = request.headers.get('X-Admin-Key');
+	if (!adminKey || adminKey !== env.ADMIN_AUTH_KEY) {
+		return errorResponse(403, 'Invalid admin credentials');
+	}
+
+	const url = new URL(request.url);
+	const path = url.pathname;
+
+	try {
+		// Handle different admin endpoints
+		switch (path) {
+			case '/admin/users':
+				return handleAdminUsers(request, env);
+			case '/admin/apikeys':
+				return handleAdminApiKeys(request, env);
+			case '/admin/credits':
+				return handleAdminCredits(request, env);
+			default:
+				return errorResponse(404, 'Admin endpoint not found');
+		}
+	} catch (error) {
+		console.error('Admin endpoint error:', error);
+		return errorResponse(500, 'Admin endpoint error');
+	}
+}
+
+async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
+	// Only allow POST for user creation
+	if (request.method !== 'POST') {
+		return errorResponse(405, 'Method not allowed');
+	}
+
+	try {
+		// Parse JSON body
+		const userData = (await request.json()) as CreateUserData;
+
+		// Validate required fields
+		if (!userData.name || !userData.email) {
+			return errorResponse(400, 'Name and email are required');
+		}
+
+		// Create the user
+		const result = await createUser(userData, env);
+
+		return new Response(
+			JSON.stringify({
+				success: true,
+				userId: result.userId,
+			}),
+			{
+				status: 201,
+				headers: { 'Content-Type': 'application/json' },
+			}
+		);
+	} catch (error) {
+		return errorResponse(400, 'Invalid request data');
+	}
+}
+
+async function handleAdminApiKeys(request: Request, env: Env): Promise<Response> {
+	// Handle different methods
+	switch (request.method) {
+		case 'POST':
+			try {
+				// Parse JSON body
+				const data = (await request.json()) as { userId: string; options?: ApiKeyOptions };
+
+				// Validate required fields
+				if (!data.userId) {
+					return errorResponse(400, 'User ID is required');
+				}
+
+				// Check if user exists
+				const user = await getUser(data.userId, env);
+				if (!user) {
+					return errorResponse(404, 'User not found');
+				}
+
+				// Create API key
+				const result = await createApiKey(data.userId, data.options || {}, env);
+
+				return new Response(
+					JSON.stringify({
+						success: true,
+						...result,
+					}),
+					{
+						status: 201,
+						headers: { 'Content-Type': 'application/json' },
+					}
+				);
+			} catch (error) {
+				return errorResponse(400, 'Invalid request data');
+			}
+
+		case 'DELETE':
+			try {
+				// Parse JSON body or URL parameters
+				const apiKey = new URL(request.url).searchParams.get('key');
+				if (!apiKey) {
+					return errorResponse(400, 'API key is required');
+				}
+
+				// Deactivate key instead of deleting
+				await deactivateApiKey(apiKey, env);
+
+				return new Response(
+					JSON.stringify({
+						success: true,
+					}),
+					{
+						status: 200,
+						headers: { 'Content-Type': 'application/json' },
+					}
+				);
+			} catch (error) {
+				return errorResponse(400, 'Invalid request data');
+			}
+
+		default:
+			return errorResponse(405, 'Method not allowed');
+	}
+}
+
+async function handleAdminCredits(request: Request, env: Env): Promise<Response> {
+	// Only allow POST for adding credits
+	if (request.method !== 'POST') {
+		return errorResponse(405, 'Method not allowed');
+	}
+
+	try {
+		// Parse JSON body
+		const data = (await request.json()) as { userId: string; amount: number };
+
+		// Validate required fields
+		if (!data.userId) {
+			return errorResponse(400, 'User ID is required');
+		}
+
+		// Validate amount
+		if (typeof data.amount !== 'number' || data.amount <= 0) {
+			return errorResponse(400, 'Amount must be a positive number');
+		}
+
+		// Check if user exists
+		const user = await getUser(data.userId, env);
+		if (!user) {
+			return errorResponse(404, 'User not found');
+		}
+
+		// Add credits
+		const result = await addCredits(data.userId, data.amount, env);
+
+		return new Response(
+			JSON.stringify({
+				success: true,
+				balance: result.balance,
+			}),
+			{
+				status: 200,
+				headers: { 'Content-Type': 'application/json' },
+			}
+		);
+	} catch (error) {
+		return errorResponse(400, 'Invalid request data');
+	}
+}
+
+// Add a function to deactivate API keys (instead of deleting them)
+async function deactivateApiKey(apiKey: string, env: Env): Promise<boolean> {
+	// Get API key data
+	const keyData = (await env.APIKI_KV.get(`apikey:${apiKey}`, { type: 'json' })) as ApiKeyData | null;
+	if (!keyData) return false;
+
+	// Update to inactive
+	keyData.active = false;
+
+	// Save updated key data
+	await env.APIKI_KV.put(`apikey:${apiKey}`, JSON.stringify(keyData));
+
+	return true;
 }
 
 // VALIDATION FUNCTIONS
@@ -176,6 +370,7 @@ async function trackApiKeyUsage(apiKey: string, env: Env): Promise<void> {
 	// Increment counter
 	const currentCount = parseInt((await env.APIKI_KV.get(keyUsageKey)) || '0');
 	await env.APIKI_KV.put(keyUsageKey, (currentCount + 1).toString(), {
+		// Store daily usage for 90 days
 		expirationTtl: 90 * 24 * 60 * 60,
 	});
 }
