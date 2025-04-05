@@ -39,6 +39,19 @@ interface EndpointCosts {
 	[endpoint: string]: number;
 }
 
+// Define endpoint configuration interface
+interface BackendConfig {
+	id: string;
+	pattern: string; // URL pattern to match (can be regex or simple path)
+	targetUrl: string; // The target backend URL
+	isRegex: boolean; // Whether pattern is a regex
+	addCreditsHeader: boolean; // Whether to add the credits header
+	forwardApiKey: boolean; // Whether to forward the original API key
+	customHeaders?: Record<string, string>; // Custom headers to add
+	createdAt: string;
+	updatedAt: string;
+}
+
 async function handleRequest(request: Request, env: Env): Promise<Response> {
 	const url = new URL(request.url);
 	const path = url.pathname;
@@ -87,7 +100,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 		}
 
 		// Forward the request with additional headers
-		return await forwardRequestToBackend(request, user, creditResult);
+		return await forwardRequestToBackend(request, user, creditResult, env);
 	} catch (error) {
 		console.error('Apiki gateway error:', error);
 		return errorResponse(500, 'Gateway error');
@@ -115,6 +128,8 @@ async function handleAdminRequest(request: Request, env: Env): Promise<Response>
 				return handleAdminApiKeys(request, env);
 			case '/admin/credits':
 				return handleAdminCredits(request, env);
+			case '/admin/backends':
+				return handleAdminBackends(request, env);
 			default:
 				return errorResponse(404, 'Admin endpoint not found');
 		}
@@ -395,20 +410,92 @@ function getEndpointCost(endpoint: string): number {
 	return costs[endpoint] || 1;
 }
 
-async function forwardRequestToBackend(request: Request, user: UserData, creditResult: CreditResult): Promise<Response> {
+// Add a function to check if a request path matches a backend pattern
+function matchBackendPattern(path: string, config: BackendConfig): boolean {
+	if (config.isRegex) {
+		try {
+			const regex = new RegExp(config.pattern);
+			return regex.test(path);
+		} catch (error) {
+			console.error('Invalid regex pattern:', error);
+			return false;
+		}
+	} else {
+		// Simple path matching (supports wildcards at the end)
+		if (config.pattern.endsWith('*')) {
+			const prefix = config.pattern.slice(0, -1);
+			return path.startsWith(prefix);
+		}
+		return path === config.pattern;
+	}
+}
+
+// Function to find the appropriate backend config for a request
+async function findBackendConfig(path: string, env: Env): Promise<BackendConfig | null> {
+	// Get all backend configs
+	const backendsList = (await env.APIKI_KV.get('backends:list', { type: 'json' })) as string[] | null;
+	if (!backendsList || backendsList.length === 0) return null;
+
+	// Try to find a matching backend
+	for (const backendId of backendsList) {
+		const config = (await env.APIKI_KV.get(`backend:${backendId}`, { type: 'json' })) as BackendConfig | null;
+		if (config && matchBackendPattern(path, config)) {
+			return config;
+		}
+	}
+
+	return null;
+}
+
+// Update the forwardRequestToBackend function to use backend configuration
+async function forwardRequestToBackend(request: Request, user: UserData, creditResult: CreditResult, env: Env): Promise<Response> {
+	// Get the path to match against backend configs
+	const url = new URL(request.url);
+	const path = url.pathname;
+
+	// Find the appropriate backend configuration
+	const backendConfig = await findBackendConfig(path, env);
+
 	// Clone the request
 	const newRequest = new Request(request);
 
-	// Add useful headers for backend
+	// Add standard user headers
 	newRequest.headers.set('X-Apiki-User-Id', user.id);
 	newRequest.headers.set('X-Apiki-Plan', user.plan);
-	newRequest.headers.set('X-Apiki-Credits-Remaining', creditResult.remaining.toString());
-	newRequest.headers.set('X-Apiki-Credits-Used', (creditResult.used || 0).toString());
 
-	// Forward to backend
-	// Note: In a real implementation, you would configure the actual backend URL
-	const backendUrl = new URL(request.url);
-	backendUrl.hostname = 'your-backend-api.example.com';
+	// Add credit information headers if configured
+	if (!backendConfig || backendConfig.addCreditsHeader) {
+		newRequest.headers.set('X-Apiki-Credits-Remaining', creditResult.remaining.toString());
+		newRequest.headers.set('X-Apiki-Credits-Used', (creditResult.used || 0).toString());
+	}
+
+	// Add any custom headers from the backend configuration
+	if (backendConfig?.customHeaders) {
+		for (const [name, value] of Object.entries(backendConfig.customHeaders)) {
+			newRequest.headers.set(name, value);
+		}
+	}
+
+	// Remove API key if not configured to forward it
+	if (!backendConfig?.forwardApiKey) {
+		newRequest.headers.delete('X-API-Key');
+	}
+
+	// Create the backend URL
+	let backendUrl: URL;
+
+	if (backendConfig) {
+		// Use the configured backend URL
+		backendUrl = new URL(backendConfig.targetUrl);
+
+		// Preserve the path and query from the original request
+		backendUrl.pathname = url.pathname;
+		backendUrl.search = url.search;
+	} else {
+		// Fallback to default behavior if no configuration found
+		backendUrl = new URL(request.url);
+		backendUrl.hostname = 'your-backend-api.example.com';
+	}
 
 	// Create a new request with the same method, headers, and body
 	const backendRequest = new Request(backendUrl.toString(), {
@@ -423,9 +510,149 @@ async function forwardRequestToBackend(request: Request, user: UserData, creditR
 
 	// Clone the response and add our headers
 	const newResponse = new Response(response.body, response);
-	newResponse.headers.set('X-Apiki-Credits-Remaining', creditResult.remaining.toString());
+
+	// Add credits information to the response if configured
+	if (!backendConfig || backendConfig.addCreditsHeader) {
+		newResponse.headers.set('X-Apiki-Credits-Remaining', creditResult.remaining.toString());
+	}
 
 	return newResponse;
+}
+
+// Add admin endpoint to manage backend configurations
+async function handleAdminBackends(request: Request, env: Env): Promise<Response> {
+	// Handle different methods
+	switch (request.method) {
+		case 'GET':
+			// List all backends or get a specific one
+			const backendId = new URL(request.url).searchParams.get('id');
+
+			if (backendId) {
+				// Get a specific backend
+				const config = await env.APIKI_KV.get(`backend:${backendId}`, { type: 'json' });
+				if (!config) {
+					return errorResponse(404, 'Backend configuration not found');
+				}
+
+				return new Response(
+					JSON.stringify({
+						success: true,
+						backend: config,
+					}),
+					{
+						status: 200,
+						headers: { 'Content-Type': 'application/json' },
+					}
+				);
+			} else {
+				// List all backends
+				const backendsList = ((await env.APIKI_KV.get('backends:list', { type: 'json' })) as string[] | null) || [];
+				const backends = [];
+
+				for (const id of backendsList) {
+					const config = await env.APIKI_KV.get(`backend:${id}`, { type: 'json' });
+					if (config) {
+						backends.push(config);
+					}
+				}
+
+				return new Response(
+					JSON.stringify({
+						success: true,
+						backends,
+					}),
+					{
+						status: 200,
+						headers: { 'Content-Type': 'application/json' },
+					}
+				);
+			}
+
+		case 'POST':
+			// Create or update a backend configuration
+			try {
+				const data = (await request.json()) as Partial<BackendConfig> & { pattern: string; targetUrl: string };
+
+				// Validate required fields
+				if (!data.pattern || !data.targetUrl) {
+					return errorResponse(400, 'Pattern and targetUrl are required');
+				}
+
+				// Create or update the backend
+				const now = new Date().toISOString();
+				const backendId = data.id || crypto.randomUUID();
+
+				const config: BackendConfig = {
+					id: backendId,
+					pattern: data.pattern,
+					targetUrl: data.targetUrl,
+					isRegex: data.isRegex || false,
+					addCreditsHeader: data.addCreditsHeader !== false, // Default to true
+					forwardApiKey: data.forwardApiKey || false, // Default to false for security
+					customHeaders: data.customHeaders || {},
+					createdAt: data.createdAt || now,
+					updatedAt: now,
+				};
+
+				// Save the configuration
+				await env.APIKI_KV.put(`backend:${backendId}`, JSON.stringify(config));
+
+				// Update the backends list
+				const backendsList = ((await env.APIKI_KV.get('backends:list', { type: 'json' })) as string[] | null) || [];
+				if (!backendsList.includes(backendId)) {
+					backendsList.push(backendId);
+					await env.APIKI_KV.put('backends:list', JSON.stringify(backendsList));
+				}
+
+				return new Response(
+					JSON.stringify({
+						success: true,
+						backend: config,
+					}),
+					{
+						status: data.id ? 200 : 201,
+						headers: { 'Content-Type': 'application/json' },
+					}
+				);
+			} catch (error) {
+				return errorResponse(400, 'Invalid request data');
+			}
+
+		case 'DELETE':
+			// Delete a backend configuration
+			const idToDelete = new URL(request.url).searchParams.get('id');
+			if (!idToDelete) {
+				return errorResponse(400, 'Backend ID is required');
+			}
+
+			// Check if backend exists
+			const configToDelete = await env.APIKI_KV.get(`backend:${idToDelete}`, { type: 'json' });
+			if (!configToDelete) {
+				return errorResponse(404, 'Backend configuration not found');
+			}
+
+			// Delete the configuration
+			await env.APIKI_KV.delete(`backend:${idToDelete}`);
+
+			// Update the backends list
+			const currentList = ((await env.APIKI_KV.get('backends:list', { type: 'json' })) as string[] | null) || [];
+			const updatedList = currentList.filter((id) => id !== idToDelete);
+			await env.APIKI_KV.put('backends:list', JSON.stringify(updatedList));
+
+			return new Response(
+				JSON.stringify({
+					success: true,
+					message: 'Backend configuration deleted',
+				}),
+				{
+					status: 200,
+					headers: { 'Content-Type': 'application/json' },
+				}
+			);
+
+		default:
+			return errorResponse(405, 'Method not allowed');
+	}
 }
 
 function errorResponse(status: number, message: string, extraHeaders: Record<string, string> = {}): Response {
