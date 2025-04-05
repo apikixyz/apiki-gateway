@@ -96,10 +96,10 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 
 	try {
 		// Validate API key and get user
-		logDebug('auth', `Validating API key ${requestId}`, { apiKey: apiKey.slice(0, 4) + '***' });
+		logDebug('auth', `Validating API key ${requestId}`, { apiId: apiKey });
 		const keyData = await validateApiKey(apiKey, env);
 		if (!keyData) {
-			logDebug('auth', `Invalid API key ${requestId}`, { apiKey: apiKey.slice(0, 4) + '***' });
+			logDebug('auth', `Invalid API key ${requestId}`, { apiId: apiKey.slice(0, 4) + '***' });
 			return errorResponse(403, 'Invalid API key');
 		}
 
