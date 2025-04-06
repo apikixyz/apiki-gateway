@@ -52,6 +52,45 @@ interface BackendConfig {
 	updatedAt: string;
 }
 
+// Simple in-memory cache to reduce KV reads
+interface CacheEntry<T> {
+	value: T;
+	expiry: number;
+}
+
+class SimpleCache {
+	private cache: Map<string, CacheEntry<any>> = new Map();
+	private readonly DEFAULT_TTL = 60000; // 1 minute in ms
+
+	get<T>(key: string): T | null {
+		const entry = this.cache.get(key);
+		const now = Date.now();
+
+		if (!entry) return null;
+		if (entry.expiry < now) {
+			this.cache.delete(key);
+			return null;
+		}
+
+		return entry.value as T;
+	}
+
+	set<T>(key: string, value: T, ttl = this.DEFAULT_TTL): void {
+		const expiry = Date.now() + ttl;
+		this.cache.set(key, { value, expiry });
+	}
+
+	delete(key: string): void {
+		this.cache.delete(key);
+	}
+}
+
+// Initialize caches
+const apiKeyCache = new SimpleCache();
+const userCache = new SimpleCache();
+const backendCache = new SimpleCache();
+const backendsListCache = new SimpleCache();
+
 // Add helper function for consistent logging
 function logDebug(context: string, message: string, data?: any): void {
 	const timestamp = new Date().toISOString();
@@ -68,79 +107,57 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 	const url = new URL(request.url);
 	const path = url.pathname;
 	const requestId = crypto.randomUUID().slice(0, 8); // Short ID for tracking
+	const method = request.method;
 
-	logDebug('request', `Incoming request ${requestId}`, {
-		path,
-		method: request.method,
-		headers: Object.fromEntries([...request.headers].map((h) => [h[0], h[1]])),
-	});
+	// Skip OPTIONS requests (CORS preflight) early
+	if (method === 'OPTIONS') {
+		return handleCors(request);
+	}
+
+	// Minimal logging to avoid performance impact
+	logDebug('request', `${method} ${path} (${requestId})`);
 
 	// Handle admin endpoints
 	if (path.startsWith('/admin/')) {
-		logDebug('request', `Admin request ${requestId}`, { path });
 		return handleAdminRequest(request, env);
-	}
-
-	// Skip OPTIONS requests (CORS preflight)
-	if (request.method === 'OPTIONS') {
-		logDebug('request', `CORS preflight request ${requestId}`, { path });
-		return handleCors(request);
 	}
 
 	// Get API key from header
 	const apiKey = request.headers.get('X-API-Key');
 	if (!apiKey) {
-		logDebug('auth', `Missing API key ${requestId}`, { path });
 		return errorResponse(401, 'API key required');
 	}
 
 	try {
-		// Validate API key and get user
-		logDebug('auth', `Validating API key ${requestId}`, { apiId: apiKey });
+		// Validate API key
 		const keyData = await validateApiKey(apiKey, env);
 		if (!keyData) {
-			logDebug('auth', `Invalid API key ${requestId}`, { apiId: apiKey.slice(0, 4) + '***' });
 			return errorResponse(403, 'Invalid API key');
 		}
 
 		// Get user data
 		const userId = keyData.userId;
-		logDebug('auth', `Getting user data ${requestId}`, { userId });
 		const user = await getUser(userId, env);
 		if (!user) {
-			logDebug('auth', `User not found ${requestId}`, { userId });
 			return errorResponse(403, 'User not found');
 		}
 
 		// Determine endpoint cost
-		const endpoint = url.pathname;
+		const endpoint = path;
 		const cost = getEndpointCost(endpoint);
-		logDebug('credits', `Endpoint cost ${requestId}`, { endpoint, cost });
 
-		// Check and update credits
-		logDebug('credits', `Processing credits ${requestId}`, { userId, cost });
+		// Process credits
 		const creditResult = await processCredits(userId, cost, env);
 		if (!creditResult.success) {
-			logDebug('credits', `Insufficient credits ${requestId}`, {
-				remaining: creditResult.remaining,
-				required: cost,
-			});
 			return errorResponse(429, 'Insufficient credits', {
 				'X-Credits-Remaining': creditResult.remaining.toString(),
 				'X-Credits-Required': cost.toString(),
 			});
 		}
 
-		// Forward the request with additional headers
-		logDebug('forward', `Forwarding request ${requestId}`, {
-			path,
-			userId: user.id,
-			plan: user.plan,
-			creditsRemaining: creditResult.remaining,
-		});
+		// Forward the request
 		return await forwardRequestToBackend(request, user, creditResult, env, requestId);
 	} catch (error) {
-		logDebug('error', `Gateway error ${requestId}`, { error: String(error) });
 		console.error('Apiki gateway error:', error);
 		return errorResponse(500, 'Gateway error');
 	}
@@ -343,10 +360,36 @@ async function deactivateApiKey(apiKey: string, env: Env): Promise<boolean> {
 // VALIDATION FUNCTIONS
 
 async function validateApiKey(apiKey: string, env: Env): Promise<ApiKeyData | null> {
+	// Check cache first
+	const cacheKey = `apikey:${apiKey}`;
+	const cachedData = apiKeyCache.get<ApiKeyData>(cacheKey);
+	if (cachedData) {
+		// If key is already cached and not active, return null
+		if (!cachedData.active) return null;
+
+		// Check expiry for cached key
+		if (cachedData.expiresAt && new Date(cachedData.expiresAt) < new Date()) {
+			apiKeyCache.delete(cacheKey);
+			return null;
+		}
+
+		// Track API key usage - don't wait for this
+		trackApiKeyUsage(apiKey, env).catch(err => console.error('Error tracking API key usage:', err));
+		return cachedData;
+	}
+
 	// Get API key data from KV
-	logDebug('validateApiKey', `Getting API key data`, { apiKey });
+	logDebug('validateApiKey', `Getting API key data from KV`, { apiKey });
 	const keyData = (await env.APIKI_KV.get(`apikey:${apiKey}`, { type: 'json' })) as ApiKeyData | null;
 	if (!keyData) return null;
+
+	// Cache the result (only if active - no need to cache inactive keys)
+	if (keyData.active) {
+		// Don't cache expired keys
+		if (!keyData.expiresAt || new Date(keyData.expiresAt) >= new Date()) {
+			apiKeyCache.set(cacheKey, keyData);
+		}
+	}
 
 	// Check if key is active
 	if (!keyData.active) return null;
@@ -356,15 +399,29 @@ async function validateApiKey(apiKey: string, env: Env): Promise<ApiKeyData | nu
 		return null;
 	}
 
-	// Track API key usage
-	await trackApiKeyUsage(apiKey, env);
+	// Track API key usage - don't wait for this
+	trackApiKeyUsage(apiKey, env).catch(err => console.error('Error tracking API key usage:', err));
 
 	return keyData;
 }
 
 async function getUser(userId: string, env: Env): Promise<UserData | null> {
+	// Check cache first
+	const cacheKey = `user:${userId}`;
+	const cachedUser = userCache.get<UserData>(cacheKey);
+	if (cachedUser) {
+		return cachedUser;
+	}
+
 	// Get user data from KV
-	return (await env.APIKI_KV.get(`user:${userId}`, { type: 'json' })) as UserData | null;
+	const userData = (await env.APIKI_KV.get(`user:${userId}`, { type: 'json' })) as UserData | null;
+
+	// Cache the result if found
+	if (userData) {
+		userCache.set(cacheKey, userData);
+	}
+
+	return userData;
 }
 
 // CREDIT FUNCTIONS
@@ -397,8 +454,8 @@ async function processCredits(userId: string, cost: number, env: Env): Promise<C
 		})
 	);
 
-	// Track usage
-	await trackUsage(userId, cost, env);
+	// Track usage without blocking the main flow
+	trackUsage(userId, cost, env).catch(err => console.error('Error tracking usage:', err));
 
 	return {
 		success: true,
@@ -438,16 +495,30 @@ async function trackApiKeyUsage(apiKey: string, env: Env): Promise<void> {
 // UTILITY FUNCTIONS
 
 function getEndpointCost(endpoint: string): number {
-	// Define costs for different endpoints
-	const costs: EndpointCosts = {
-		'/api/v1/simple': 1,
-		'/api/v1/search': 2,
-		'/api/v1/complex': 5,
-		// Add more endpoint costs as needed
-	};
+	// Define costs for different endpoints using patterns
+	const costPatterns: Array<{pattern: RegExp; cost: number}> = [
+		// Exact matches
+		{pattern: /^\/api\/v1\/simple$/, cost: 1},
+		{pattern: /^\/api\/v1\/search$/, cost: 2},
+		{pattern: /^\/api\/v1\/complex$/, cost: 5},
 
-	// Return cost for endpoint or default cost
-	return costs[endpoint] || 1;
+		// Pattern matches
+		{pattern: /^\/api\/v1\/images\/.*$/, cost: 3},
+		{pattern: /^\/api\/v1\/data\/large\/.*$/, cost: 4},
+
+		// Catch-all for /api/v2 endpoints
+		{pattern: /^\/api\/v2\/.*$/, cost: 2},
+	];
+
+	// Find matching pattern
+	for (const {pattern, cost} of costPatterns) {
+		if (pattern.test(endpoint)) {
+			return cost;
+		}
+	}
+
+	// Default cost for unmatched endpoints
+	return 1;
 }
 
 // Add a function to check if a request path matches a backend pattern
@@ -472,9 +543,23 @@ function matchBackendPattern(path: string, config: BackendConfig): boolean {
 
 // Function to find the appropriate backend config for a request
 async function findBackendConfig(path: string, env: Env): Promise<BackendConfig | null> {
-	// Get all backend configs
-	const backendsList = (await env.APIKI_KV.get('backends:list', { type: 'json' })) as string[] | null;
-	if (!backendsList || backendsList.length === 0) {
+	// Get all backend configs from cache first
+	let backendsList = backendsListCache.get<string[]>('backends:list');
+
+	// If not in cache, get from KV
+	if (!backendsList) {
+		backendsList = (await env.APIKI_KV.get('backends:list', { type: 'json' })) as string[] | null;
+
+		// Cache the list if found
+		if (backendsList) {
+			backendsListCache.set('backends:list', backendsList, 300000); // Cache for 5 minutes
+		} else {
+			logDebug('backend', 'No backend configurations found');
+			return null;
+		}
+	}
+
+	if (backendsList.length === 0) {
 		logDebug('backend', 'No backend configurations found');
 		return null;
 	}
@@ -486,18 +571,31 @@ async function findBackendConfig(path: string, env: Env): Promise<BackendConfig 
 
 	// Try to find a matching backend
 	for (const backendId of backendsList) {
-		const config = (await env.APIKI_KV.get(`backend:${backendId}`, { type: 'json' })) as BackendConfig | null;
-		if (config) {
-			const isMatch = matchBackendPattern(path, config);
-			logDebug('backend', `Testing backend pattern`, {
-				backendId: config.id,
-				pattern: config.pattern,
-				isMatch,
-			});
+		// Check cache first
+		const cacheKey = `backend:${backendId}`;
+		let config = backendCache.get<BackendConfig>(cacheKey);
 
-			if (isMatch) {
-				return config;
+		// If not in cache, get from KV
+		if (!config) {
+			config = (await env.APIKI_KV.get(cacheKey, { type: 'json' })) as BackendConfig | null;
+
+			// Cache if found
+			if (config) {
+				backendCache.set(cacheKey, config, 300000); // Cache for 5 minutes
+			} else {
+				continue; // Skip if not found
 			}
+		}
+
+		const isMatch = matchBackendPattern(path, config);
+		logDebug('backend', `Testing backend pattern`, {
+			backendId: config.id,
+			pattern: config.pattern,
+			isMatch,
+		});
+
+		if (isMatch) {
+			return config;
 		}
 	}
 
@@ -517,92 +615,102 @@ async function forwardRequestToBackend(
 	const path = url.pathname;
 
 	// Find the appropriate backend configuration
-	logDebug('backend', `Finding backend config ${requestId}`, { path });
 	const backendConfig = await findBackendConfig(path, env);
 
-	if (backendConfig) {
-		logDebug('backend', `Found backend config ${requestId}`, {
-			backendId: backendConfig.id,
-			pattern: backendConfig.pattern,
-			targetUrl: backendConfig.targetUrl.replace(/\/\/([^\/]+)/, '//***'), // Hide domain for security
-		});
-	} else {
-		logDebug('backend', `No backend config found ${requestId}`, { path });
+	// Create a new headers object based on the original request
+	const headers = new Headers();
+
+	// Only forward safe headers to prevent leaking information
+	const safeHeaders = [
+		'content-type',
+		'content-length',
+		'accept',
+		'accept-language',
+		'user-agent'
+	];
+
+	for (const header of safeHeaders) {
+		const value = request.headers.get(header);
+		if (value) {
+			headers.set(header, value);
+		}
 	}
 
-	// Clone the request
-	const newRequest = new Request(request);
-
 	// Add standard user headers
-	newRequest.headers.set('X-Apiki-User-Id', user.id);
-	newRequest.headers.set('X-Apiki-Plan', user.plan);
-	newRequest.headers.set('X-Request-ID', requestId);
+	headers.set('X-Apiki-User-Id', user.id);
+	headers.set('X-Apiki-Plan', user.plan);
+	headers.set('X-Request-ID', requestId);
 
 	// Add credit information headers if configured
 	if (!backendConfig || backendConfig.addCreditsHeader) {
-		newRequest.headers.set('X-Apiki-Credits-Remaining', creditResult.remaining.toString());
-		newRequest.headers.set('X-Apiki-Credits-Used', (creditResult.used || 0).toString());
+		headers.set('X-Apiki-Credits-Remaining', creditResult.remaining.toString());
+		if (creditResult.used) {
+			headers.set('X-Apiki-Credits-Used', creditResult.used.toString());
+		}
+	}
+
+	// Add API key if configured to forward it
+	if (backendConfig?.forwardApiKey) {
+		const apiKey = request.headers.get('X-API-Key');
+		if (apiKey) {
+			headers.set('X-API-Key', apiKey);
+		}
 	}
 
 	// Add any custom headers from the backend configuration
 	if (backendConfig?.customHeaders) {
-		logDebug('backend', `Adding custom headers ${requestId}`, {
-			headers: backendConfig.customHeaders,
-		});
 		for (const [name, value] of Object.entries(backendConfig.customHeaders)) {
-			newRequest.headers.set(name, value);
+			headers.set(name, value);
 		}
-	}
-
-	// Remove API key if not configured to forward it
-	if (!backendConfig?.forwardApiKey) {
-		logDebug('backend', `Removing API key header ${requestId}`);
-		newRequest.headers.delete('X-API-Key');
 	}
 
 	// Create the backend URL
 	let backendUrl: URL;
+	let targetPath = path;
 
 	if (backendConfig) {
 		// Use the configured backend URL
 		backendUrl = new URL(backendConfig.targetUrl);
 
-		// Preserve the path and query from the original request
-		backendUrl.pathname = url.pathname;
+		// Handle wildcard pattern for forwarding only the wildcard part
+		if (!backendConfig.isRegex && backendConfig.pattern.endsWith('*')) {
+			const prefix = backendConfig.pattern.slice(0, -1); // Pattern without the '*'
+
+			if (path.startsWith(prefix)) {
+				// Extract the part after the prefix
+				targetPath = path.substring(prefix.length);
+
+				// Ensure the target path starts with a slash if not empty
+				if (targetPath !== '' && !targetPath.startsWith('/')) {
+					targetPath = '/' + targetPath;
+				}
+			}
+		}
+
+		// Set the path and query for the backend URL
+		backendUrl.pathname = targetPath;
 		backendUrl.search = url.search;
 	} else {
 		// Fallback to default behavior if no configuration found
 		backendUrl = new URL(request.url);
 		backendUrl.hostname = 'your-backend-api.example.com';
-		logDebug('backend', `Using default backend ${requestId}`, {
-			hostname: backendUrl.hostname,
-		});
 	}
 
-	// Create a new request with the same method, headers, and body
+	// Create a new request with the filtered headers, same method, and body
 	const backendRequest = new Request(backendUrl.toString(), {
 		method: request.method,
-		headers: newRequest.headers,
+		headers: headers,
 		body: request.body,
 		redirect: 'follow',
 	});
 
-	logDebug('backend', `Sending request to backend ${requestId}`, {
-		url: backendUrl.toString().replace(/\/\/([^\/]+)/, '//***'), // Hide domain for security
-		method: backendRequest.method,
-	});
-
 	try {
-		// Send request to backend
+		// Send request to backend and track response time
 		const startTime = Date.now();
 		const response = await fetch(backendRequest);
 		const responseTime = Date.now() - startTime;
 
-		logDebug('backend', `Received response from backend ${requestId}`, {
-			status: response.status,
-			statusText: response.statusText,
-			responseTime: `${responseTime}ms`,
-		});
+		logDebug('backend', `Response from ${backendUrl.hostname} (${response.status}): ${responseTime}ms`);
 
 		// Clone the response and add our headers
 		const newResponse = new Response(response.body, response);
@@ -615,10 +723,7 @@ async function forwardRequestToBackend(
 
 		return newResponse;
 	} catch (error) {
-		logDebug('error', `Backend request failed ${requestId}`, {
-			error: String(error),
-			url: backendUrl.toString().replace(/\/\/([^\/]+)/, '//***'),
-		});
+		console.error(`Backend request failed: ${error}`);
 
 		// Return a gateway error
 		return errorResponse(502, 'Backend request failed', {
@@ -764,23 +869,53 @@ async function handleAdminBackends(request: Request, env: Env): Promise<Response
 }
 
 function errorResponse(status: number, message: string, extraHeaders: Record<string, string> = {}): Response {
+	// Generic error messages for production
+	const productionMessages: Record<number, string> = {
+		400: 'Bad Request',
+		401: 'Unauthorized',
+		403: 'Forbidden',
+		404: 'Not Found',
+		429: 'Too Many Requests',
+		500: 'Internal Server Error',
+		502: 'Bad Gateway',
+		503: 'Service Unavailable'
+	};
+
+	// Use more generic messages in production for better security
+	const responseMessage = productionMessages[status] || message;
+
 	const headers = {
 		'Content-Type': 'application/json',
+		// Add security headers
+		'X-Content-Type-Options': 'nosniff',
+		'X-Frame-Options': 'DENY',
 		...extraHeaders,
 	};
 
-	return new Response(JSON.stringify({ error: message }), { status, headers });
+	// Include specific error code for debugging while keeping messages generic
+	return new Response(JSON.stringify({
+		error: responseMessage,
+		code: status
+	}), { status, headers });
 }
 
 function handleCors(request: Request): Response {
-	// Basic CORS handling
+	const origin = request.headers.get('Origin') || '*';
+	// List of allowed origins - could be configured externally
+	const allowedOrigins = ['https://yourdomain.com', 'https://app.yourdomain.com'];
+
+	// Allow specific origins or use * as fallback
+	const responseOrigin = allowedOrigins.includes(origin) ? origin : '*';
+
 	return new Response(null, {
 		status: 204,
 		headers: {
-			'Access-Control-Allow-Origin': '*',
+			'Access-Control-Allow-Origin': responseOrigin,
 			'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-			'Access-Control-Allow-Headers': 'Content-Type, X-API-Key',
+			'Access-Control-Allow-Headers': 'Content-Type, X-API-Key, Authorization',
 			'Access-Control-Max-Age': '86400',
+			// Add security headers
+			'X-Content-Type-Options': 'nosniff',
 		},
 	});
 }
@@ -789,12 +924,16 @@ function handleCors(request: Request): Response {
 // Note: These would be called from a separate admin interface
 
 async function createApiKey(userId: string, options: ApiKeyOptions = {}, env: Env): Promise<{ apiKey: string } & ApiKeyData> {
-	// Generate a secure API key
-	const buffer = new Uint8Array(16);
+	// Generate a secure API key with more entropy (32 bytes instead of 16)
+	const buffer = new Uint8Array(32);
 	crypto.getRandomValues(buffer);
-	const apiKey = Array.from(buffer)
-		.map((b) => b.toString(16).padStart(2, '0'))
-		.join('');
+
+	// Create a more readable key format: apk_[base64url]
+	const base64 = btoa(String.fromCharCode(...buffer))
+		.replace(/\+/g, '-')
+		.replace(/\//g, '_')
+		.replace(/=/g, '');
+	const apiKey = `apk_${base64}`;
 
 	// Create API key data
 	const keyData: ApiKeyData = {
