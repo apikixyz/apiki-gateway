@@ -4,11 +4,16 @@
 	"description": "A Gateway for APIs",
 	"scripts": {
 		"dev": "wrangler dev",
+		"dev:admin": "wrangler dev --env admin",
+		"dev:all": "concurrently \"npm run dev\" \"npm run dev:admin\"",
 		"deploy": "wrangler deploy --minify",
+		"deploy:admin": "wrangler deploy --minify --env admin",
+		"deploy:all": "npm run deploy && npm run deploy:admin",
 		"cf-typegen": "wrangler types"
 	},
 	"devDependencies": {
 		"@types/node": "^22.14.0",
+		"concurrently": "^8.2.2",
 		"typescript": "^5.8.3",
 		"wrangler": "^4.9.0"
 	}

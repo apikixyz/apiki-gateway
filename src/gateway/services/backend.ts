@@ -1,11 +1,16 @@
-import { BackendConfig, Env } from '../types';
-import { SimpleCache } from '../utils/cache';
-import { logDebug } from '../utils/logging';
+// Backend service for gateway
+import { BackendConfig, Env } from '../../shared/types';
+import { SimpleCache } from '../../shared/utils/cache';
+import { logDebug } from '../../shared/utils/logging';
+import { KeyPrefixes, getValue } from '../../shared/utils/kv';
 
 // Initialize backend caches
 const backendCache = new SimpleCache();
 const backendsListCache = new SimpleCache();
 
+/**
+ * Match a request path against a backend pattern
+ */
 export function matchBackendPattern(path: string, config: BackendConfig): boolean {
 	if (config.isRegex) {
 		try {
@@ -25,13 +30,16 @@ export function matchBackendPattern(path: string, config: BackendConfig): boolea
 	}
 }
 
+/**
+ * Find the appropriate backend configuration for a request path
+ */
 export async function findBackendConfig(path: string, env: Env): Promise<BackendConfig | null> {
 	// Get all backend configs from cache first
 	let backendsList = backendsListCache.get<string[]>('backends:list');
 
 	// If not in cache, get from KV
 	if (!backendsList) {
-		backendsList = (await env.APIKI_KV.get('backends:list', { type: 'json' })) as string[] | null;
+		backendsList = (await getValue<string[]>('backends:list', env)) ?? undefined;
 
 		// Cache the list if found
 		if (backendsList) {
@@ -42,15 +50,10 @@ export async function findBackendConfig(path: string, env: Env): Promise<Backend
 		}
 	}
 
-	if (backendsList.length === 0) {
+	if (!backendsList || backendsList.length === 0) {
 		logDebug('backend', 'No backend configurations found');
 		return null;
 	}
-
-	logDebug('backend', `Searching for backend match`, {
-		path,
-		backendCount: backendsList.length,
-	});
 
 	// Try to find a matching backend
 	for (const backendId of backendsList) {
@@ -60,7 +63,7 @@ export async function findBackendConfig(path: string, env: Env): Promise<Backend
 
 		// If not in cache, get from KV
 		if (!config) {
-			config = (await env.APIKI_KV.get(cacheKey, { type: 'json' })) as BackendConfig | null;
+			config = (await KeyPrefixes.BACKEND.get<BackendConfig>(backendId, env)) ?? undefined;
 
 			// Cache if found
 			if (config) {
@@ -71,11 +74,6 @@ export async function findBackendConfig(path: string, env: Env): Promise<Backend
 		}
 
 		const isMatch = matchBackendPattern(path, config);
-		logDebug('backend', `Testing backend pattern`, {
-			backendId: config.id,
-			pattern: config.pattern,
-			isMatch,
-		});
 
 		if (isMatch) {
 			return config;

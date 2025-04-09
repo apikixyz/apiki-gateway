@@ -21,7 +21,7 @@ export interface ClientData {
 	createdAt: string;
 	plan: string;
 	name: string;
-	email?: string;
+	email?: string; // Optional for non-human clients
 	type: 'service' | 'application' | 'personal';
 	metadata: Record<string, any>;
 }
@@ -29,7 +29,7 @@ export interface ClientData {
 export interface CreateClientData {
 	plan?: string;
 	name: string;
-	email?: string;
+	email?: string; // Optional for non-human clients
 	type?: 'service' | 'application' | 'personal';
 	metadata?: Record<string, any>;
 }

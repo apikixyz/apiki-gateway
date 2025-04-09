@@ -1,9 +1,14 @@
-import { CreditData, CreditResult, Env } from '../types';
+// Credits service for gateway
+import { CreditData, CreditResult, Env } from '../../shared/types';
+import { logDebug } from '../../shared/utils/logging';
+import { KeyPrefixes } from '../../shared/utils/kv';
 
+/**
+ * Process credits for a request - core gateway functionality
+ */
 export async function processCredits(clientId: string, cost: number, env: Env): Promise<CreditResult> {
 	// Get current credit balance
-	const creditsKey = `credits:${clientId}`;
-	const creditData = ((await env.APIKI_KV.get(creditsKey, { type: 'json' })) as CreditData) || {
+	const creditData = await KeyPrefixes.CREDITS.get<CreditData>(clientId, env) || {
 		balance: 0,
 		lastUpdated: new Date().toISOString(),
 	};
@@ -20,13 +25,12 @@ export async function processCredits(clientId: string, cost: number, env: Env): 
 	const newBalance = creditData.balance - cost;
 
 	// Update credit balance
-	await env.APIKI_KV.put(
-		creditsKey,
-		JSON.stringify({
-			balance: newBalance,
-			lastUpdated: new Date().toISOString(),
-		})
-	);
+	const updated = {
+		balance: newBalance,
+		lastUpdated: new Date().toISOString(),
+	};
+
+	await KeyPrefixes.CREDITS.put(clientId, updated, env);
 
 	// Track usage without blocking the main flow
 	trackUsage(clientId, cost, env).catch((err) => console.error('Error tracking usage:', err));
@@ -38,44 +42,32 @@ export async function processCredits(clientId: string, cost: number, env: Env): 
 	};
 }
 
-export async function addCredits(clientId: string, amount: number, env: Env): Promise<{ balance: number }> {
-	// Get current credits
-	const creditsKey = `credits:${clientId}`;
-	const creditData = ((await env.APIKI_KV.get(creditsKey, { type: 'json' })) as CreditData) || {
-		balance: 0,
-		lastUpdated: new Date().toISOString(),
-	};
-
-	// Add credits
-	const newBalance = creditData.balance + amount;
-
-	// Update balance
-	await env.APIKI_KV.put(
-		creditsKey,
-		JSON.stringify({
-			balance: newBalance,
-			lastUpdated: new Date().toISOString(),
-		})
-	);
-
-	return { balance: newBalance };
-}
-
+/**
+ * Track usage - minimal implementation for performance
+ */
 export async function trackUsage(clientId: string, amount: number, env: Env): Promise<void> {
 	// Create usage key with today's date
 	const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-	const usageKey = `usage:${clientId}:${today}`;
+	const usageKey = KeyPrefixes.USAGE.key(`${clientId}:${today}`);
 
-	// Get current usage
-	const currentUsage = parseInt((await env.APIKI_KV.get(usageKey)) || '0');
+	try {
+		// Get current usage - get without type:json for better performance
+		const currentUsage = parseInt(await env.APIKI_KV.get(usageKey) || '0');
 
-	// Update usage
-	await env.APIKI_KV.put(usageKey, (currentUsage + amount).toString(), {
-		// Store daily usage for 90 days
-		expirationTtl: 90 * 24 * 60 * 60,
-	});
+		// Update usage
+		await env.APIKI_KV.put(usageKey, (currentUsage + amount).toString(), {
+			// Store daily usage for 90 days
+			expirationTtl: 90 * 24 * 60 * 60,
+		});
+	} catch (error) {
+		// Non-blocking error handling
+		logDebug('trackUsage', 'Error tracking client usage', { error, clientId });
+	}
 }
 
+/**
+ * Get endpoint cost based on pattern matching
+ */
 export function getEndpointCost(endpoint: string): number {
 	// Define costs for different endpoints using patterns
 	const costPatterns: Array<{ pattern: RegExp; cost: number }> = [
