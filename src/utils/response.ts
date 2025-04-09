@@ -44,20 +44,26 @@ export function handleCors(request: Request, env?: Env): Response {
 		return createCorsResponse('null');
 	}
 
-	// Get allowed origins from environment variable
-	const allowedOrigins = env?.ALLOWED_ORIGINS?.split(',') || [];
+	try {
+		// Get allowed origins from environment variable
+		const allowedOrigins = env?.ALLOWED_ORIGINS?.split(',').map(o => o.trim()).filter(Boolean) || [];
 
-	// For development, if no allowed origins configured, fallback to a safer approach than '*'
-	if (allowedOrigins.length === 0) {
-		// Only allow the requesting origin if it's a secure connection
-		const responseOrigin = origin.startsWith('https://') ? origin : 'null';
+		// For development, if no allowed origins configured, fallback to a safer approach than '*'
+		if (allowedOrigins.length === 0) {
+			// Only allow the requesting origin if it's a secure connection
+			const responseOrigin = origin.startsWith('https://') ? origin : 'null';
+			return createCorsResponse(responseOrigin);
+		}
+
+		// For production environments, strictly validate against configured domains
+		const responseOrigin = allowedOrigins.includes(origin) ? origin : 'null';
+
 		return createCorsResponse(responseOrigin);
+	} catch (error) {
+		// If there's any error processing CORS, default to secure options
+		console.error('Error processing CORS:', error);
+		return createCorsResponse('null');
 	}
-
-	// For production environments, strictly validate against configured domains
-	const responseOrigin = allowedOrigins.includes(origin) ? origin : 'null';
-
-	return createCorsResponse(responseOrigin);
 }
 
 function createCorsResponse(origin: string): Response {

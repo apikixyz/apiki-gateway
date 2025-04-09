@@ -29,24 +29,27 @@ export async function createClient(clientData: CreateClientData, env: Env): Prom
 	// Create client - extract known properties first, then add remaining ones
 	const { name, email, plan = 'free', type = 'personal', metadata = {} } = clientData;
 
-	// Normalize email (lowercase)
-	const normalizedEmail = email.toLowerCase();
-
+	// Create client object
 	const client: ClientData = {
 		id: clientId,
 		createdAt: new Date().toISOString(),
 		plan,
 		name,
-		email: normalizedEmail, // Store normalized email
 		type,
 		metadata,
 	};
 
+	// Add email if provided (normalize to lowercase)
+	if (email) {
+		const normalizedEmail = email.toLowerCase();
+		client.email = normalizedEmail;
+
+		// Store email reference for uniqueness checking
+		await env.APIKI_KV.put(`email:${normalizedEmail}`, clientId);
+	}
+
 	// Store client data
 	await env.APIKI_KV.put(`client:${clientId}`, JSON.stringify(client));
-
-	// Store email reference for uniqueness checking
-	await env.APIKI_KV.put(`email:${normalizedEmail}`, clientId);
 
 	// Set initial credits based on plan
 	const planCredits: Record<string, number> = {
@@ -67,6 +70,8 @@ export async function createClient(clientData: CreateClientData, env: Env): Prom
 }
 
 export async function isEmailRegistered(email: string, env: Env): Promise<boolean> {
+	if (!email) return false;
+
 	// Create a normalized version of the email (lowercase)
 	const normalizedEmail = email.toLowerCase();
 

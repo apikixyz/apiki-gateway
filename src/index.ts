@@ -15,26 +15,26 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 	const requestId = crypto.randomUUID().slice(0, 8); // Short ID for tracking
 	const method = request.method;
 
-	// Skip OPTIONS requests (CORS preflight) early
-	if (method === 'OPTIONS') {
-		return handleCors(request, env);
-	}
-
-	// Minimal logging to avoid performance impact
-	logDebug('request', `${method} ${path} (${requestId})`);
-
-	// Handle admin endpoints
-	if (path.startsWith('/admin/')) {
-		return handleAdminRequest(request, env);
-	}
-
-	// Get API key from header
-	const apiKey = request.headers.get('X-API-Key');
-	if (!apiKey) {
-		return errorResponse(401, 'API key required');
-	}
-
 	try {
+		// Skip OPTIONS requests (CORS preflight) early
+		if (method === 'OPTIONS') {
+			return handleCors(request, env);
+		}
+
+		// Minimal logging to avoid performance impact
+		logDebug('request', `${method} ${path} (${requestId})`);
+
+		// Handle admin endpoints
+		if (path.startsWith('/admin/')) {
+			return handleAdminRequest(request, env);
+		}
+
+		// Get API key from header
+		const apiKey = request.headers.get('X-API-Key');
+		if (!apiKey) {
+			return errorResponse(401, 'API key required');
+		}
+
 		// Validate API key
 		const keyData = await validateApiKey(apiKey, env);
 		if (!keyData) {
@@ -64,8 +64,13 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 		// Forward the request
 		return await forwardRequestToBackend(request, client, creditResult, env, requestId);
 	} catch (error) {
-		console.error('Apiki gateway error:', error);
-		return errorResponse(500, 'Gateway error');
+		// Log the error with more detail
+		console.error(`APIKI Gateway error (${requestId}):`, error);
+
+		// Return a generic error to the client
+		return errorResponse(500, 'Gateway error', {
+			'X-Request-ID': requestId, // Include request ID for tracing
+		});
 	}
 }
 

@@ -75,8 +75,8 @@ export async function createApiKey(clientId: string, options: ApiKeyOptions = {}
 	// Store API key
 	await env.APIKI_KV.put(`apikey:${apiKey}`, JSON.stringify(keyData));
 
-	// Link API key to client
-	const clientKeysKey = `keys:${clientId}`;
+	// Link API key to client - using clientKey format for consistency
+	const clientKeysKey = `client:keys:${clientId}`;
 	const clientKeys = JSON.parse((await env.APIKI_KV.get(clientKeysKey)) || '[]');
 	clientKeys.push({
 		key: apiKey,
@@ -100,6 +100,9 @@ export async function deactivateApiKey(apiKey: string, env: Env): Promise<boolea
 	// Save updated key data
 	await env.APIKI_KV.put(`apikey:${apiKey}`, JSON.stringify(keyData));
 
+	// Clear from cache if present
+	apiKeyCache.delete(`apikey:${apiKey}`);
+
 	return true;
 }
 
@@ -109,8 +112,8 @@ export async function trackApiKeyUsage(apiKey: string, env: Env): Promise<void> 
 	const keyUsageKey = `keyusage:${apiKey}:${today}`;
 
 	// Increment counter
-	const currentCount = parseInt((await env.APIKI_KV.get(keyUsageKey)) || '0');
-	await env.APIKI_KV.put(keyUsageKey, (currentCount + 1).toString(), {
+	const currentUsage = parseInt((await env.APIKI_KV.get(keyUsageKey)) || '0');
+	await env.APIKI_KV.put(keyUsageKey, (currentUsage + 1).toString(), {
 		// Store daily usage for 90 days
 		expirationTtl: 90 * 24 * 60 * 60,
 	});

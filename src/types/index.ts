@@ -15,13 +15,13 @@ export interface ApiKeyOptions {
 	name?: string;
 }
 
-// Client related interfaces (renamed from User)
+// Client related interfaces
 export interface ClientData {
 	id: string;
 	createdAt: string;
 	plan: string;
 	name: string;
-	email: string;
+	email?: string;
 	type: 'service' | 'application' | 'personal';
 	metadata: Record<string, any>;
 }
@@ -29,7 +29,7 @@ export interface ClientData {
 export interface CreateClientData {
 	plan?: string;
 	name: string;
-	email: string;
+	email?: string;
 	type?: 'service' | 'application' | 'personal';
 	metadata?: Record<string, any>;
 }

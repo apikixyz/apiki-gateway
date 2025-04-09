@@ -1,6 +1,6 @@
-import { BackendConfig, CreateClientData, ApiKeyOptions, Env } from '../types';
+import { BackendConfig, CreateClientData, ApiKeyOptions, ClientData, Env } from '../types';
 import { errorResponse } from '../utils/response';
-import { createClient, isEmailRegistered } from '../services/clients';
+import { createClient, isEmailRegistered, getClient } from '../services/clients';
 import { createApiKey, deactivateApiKey } from '../services/apiKey';
 import { addCredits } from '../services/credits';
 
@@ -35,40 +35,67 @@ export async function handleAdminRequest(request: Request, env: Env): Promise<Re
 }
 
 async function handleAdminClients(request: Request, env: Env): Promise<Response> {
-	// Only allow POST for client creation
-	if (request.method !== 'POST') {
-		return errorResponse(405, 'Method not allowed');
-	}
+	// Handle different methods
+	switch (request.method) {
+		case 'GET':
+			// Get client by ID
+			const url = new URL(request.url);
+			const clientId = url.searchParams.get('id');
+			if (clientId) {
+				const client = await getClient(clientId, env);
+				if (!client) {
+					return errorResponse(404, 'Client not found');
+				}
 
-	try {
-		// Parse JSON body
-		const clientData = await request.json() as CreateClientData;
-
-		// Validate required fields
-		if (!clientData.name || !clientData.email) {
-			return errorResponse(400, 'Name and email are required');
-		}
-
-		// Check if email is already registered
-		if (await isEmailRegistered(clientData.email, env)) {
-			return errorResponse(409, 'Email address is already registered');
-		}
-
-		// Create the client
-		const result = await createClient(clientData, env);
-
-		return new Response(
-			JSON.stringify({
-				success: true,
-				clientId: result.clientId,
-			}),
-			{
-				status: 201,
-				headers: { 'Content-Type': 'application/json' },
+				return new Response(
+					JSON.stringify({
+						success: true,
+						client,
+					}),
+					{
+						status: 200,
+						headers: { 'Content-Type': 'application/json' },
+					}
+				);
+			} else {
+				// Could implement listing all clients here
+				return errorResponse(400, 'Client ID parameter is required');
 			}
-		);
-	} catch (error) {
-		return errorResponse(400, 'Invalid request data');
+
+		case 'POST':
+			try {
+				// Parse JSON body
+				const clientData = await request.json() as CreateClientData;
+
+				// Validate required fields
+				if (!clientData.name) {
+					return errorResponse(400, 'Name is required');
+				}
+
+				// Check if email is provided and not already registered
+				if (clientData.email && await isEmailRegistered(clientData.email, env)) {
+					return errorResponse(409, 'Email address is already registered');
+				}
+
+				// Create the client
+				const result = await createClient(clientData, env);
+
+				return new Response(
+					JSON.stringify({
+						success: true,
+						clientId: result.clientId,
+					}),
+					{
+						status: 201,
+						headers: { 'Content-Type': 'application/json' },
+					}
+				);
+			} catch (error) {
+				return errorResponse(400, 'Invalid request data');
+			}
+
+		default:
+			return errorResponse(405, 'Method not allowed');
 	}
 }
 
@@ -86,8 +113,7 @@ async function handleAdminApiKeys(request: Request, env: Env): Promise<Response>
 				}
 
 				// Check if client exists
-				const clientKey = `client:${data.clientId}`;
-				const client = await env.APIKI_KV.get(clientKey, { type: 'json' });
+				const client = await getClient(data.clientId, env);
 				if (!client) {
 					return errorResponse(404, 'Client not found');
 				}
@@ -118,7 +144,10 @@ async function handleAdminApiKeys(request: Request, env: Env): Promise<Response>
 				}
 
 				// Deactivate key instead of deleting
-				await deactivateApiKey(apiKey, env);
+				const result = await deactivateApiKey(apiKey, env);
+				if (!result) {
+					return errorResponse(404, 'API key not found');
+				}
 
 				return new Response(
 					JSON.stringify({
@@ -159,8 +188,7 @@ async function handleAdminCredits(request: Request, env: Env): Promise<Response>
 		}
 
 		// Check if client exists
-		const clientKey = `client:${data.clientId}`;
-		const client = await env.APIKI_KV.get(clientKey, { type: 'json' });
+		const client = await getClient(data.clientId, env);
 		if (!client) {
 			return errorResponse(404, 'Client not found');
 		}
