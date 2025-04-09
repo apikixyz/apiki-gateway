@@ -1,8 +1,8 @@
 import { CreditData, CreditResult, Env } from '../types';
 
-export async function processCredits(userId: string, cost: number, env: Env): Promise<CreditResult> {
+export async function processCredits(clientId: string, cost: number, env: Env): Promise<CreditResult> {
 	// Get current credit balance
-	const creditsKey = `credits:${userId}`;
+	const creditsKey = `credits:${clientId}`;
 	const creditData = ((await env.APIKI_KV.get(creditsKey, { type: 'json' })) as CreditData) || {
 		balance: 0,
 		lastUpdated: new Date().toISOString(),
@@ -29,7 +29,7 @@ export async function processCredits(userId: string, cost: number, env: Env): Pr
 	);
 
 	// Track usage without blocking the main flow
-	trackUsage(userId, cost, env).catch((err) => console.error('Error tracking usage:', err));
+	trackUsage(clientId, cost, env).catch((err) => console.error('Error tracking usage:', err));
 
 	return {
 		success: true,
@@ -38,9 +38,9 @@ export async function processCredits(userId: string, cost: number, env: Env): Pr
 	};
 }
 
-export async function addCredits(userId: string, amount: number, env: Env): Promise<{ balance: number }> {
+export async function addCredits(clientId: string, amount: number, env: Env): Promise<{ balance: number }> {
 	// Get current credits
-	const creditsKey = `credits:${userId}`;
+	const creditsKey = `credits:${clientId}`;
 	const creditData = ((await env.APIKI_KV.get(creditsKey, { type: 'json' })) as CreditData) || {
 		balance: 0,
 		lastUpdated: new Date().toISOString(),
@@ -61,10 +61,10 @@ export async function addCredits(userId: string, amount: number, env: Env): Prom
 	return { balance: newBalance };
 }
 
-export async function trackUsage(userId: string, amount: number, env: Env): Promise<void> {
+export async function trackUsage(clientId: string, amount: number, env: Env): Promise<void> {
 	// Create usage key with today's date
 	const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-	const usageKey = `usage:${userId}:${today}`;
+	const usageKey = `usage:${clientId}:${today}`;
 
 	// Get current usage
 	const currentUsage = parseInt((await env.APIKI_KV.get(usageKey)) || '0');

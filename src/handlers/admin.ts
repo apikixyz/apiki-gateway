@@ -1,6 +1,6 @@
-import { BackendConfig, CreateUserData, ApiKeyOptions, Env } from '../types';
+import { BackendConfig, CreateClientData, ApiKeyOptions, Env } from '../types';
 import { errorResponse } from '../utils/response';
-import { createUser, isEmailRegistered } from '../services/users';
+import { createClient, isEmailRegistered } from '../services/clients';
 import { createApiKey, deactivateApiKey } from '../services/apiKey';
 import { addCredits } from '../services/credits';
 
@@ -17,8 +17,8 @@ export async function handleAdminRequest(request: Request, env: Env): Promise<Re
 	try {
 		// Handle different admin endpoints
 		switch (path) {
-			case '/admin/users':
-				return handleAdminUsers(request, env);
+			case '/admin/clients':
+				return handleAdminClients(request, env);
 			case '/admin/apikeys':
 				return handleAdminApiKeys(request, env);
 			case '/admin/credits':
@@ -34,33 +34,33 @@ export async function handleAdminRequest(request: Request, env: Env): Promise<Re
 	}
 }
 
-async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
-	// Only allow POST for user creation
+async function handleAdminClients(request: Request, env: Env): Promise<Response> {
+	// Only allow POST for client creation
 	if (request.method !== 'POST') {
 		return errorResponse(405, 'Method not allowed');
 	}
 
 	try {
 		// Parse JSON body
-		const userData = await request.json() as CreateUserData;
+		const clientData = await request.json() as CreateClientData;
 
 		// Validate required fields
-		if (!userData.name || !userData.email) {
+		if (!clientData.name || !clientData.email) {
 			return errorResponse(400, 'Name and email are required');
 		}
 
 		// Check if email is already registered
-		if (await isEmailRegistered(userData.email, env)) {
+		if (await isEmailRegistered(clientData.email, env)) {
 			return errorResponse(409, 'Email address is already registered');
 		}
 
-		// Create the user
-		const result = await createUser(userData, env);
+		// Create the client
+		const result = await createClient(clientData, env);
 
 		return new Response(
 			JSON.stringify({
 				success: true,
-				userId: result.userId,
+				clientId: result.clientId,
 			}),
 			{
 				status: 201,
@@ -78,22 +78,22 @@ async function handleAdminApiKeys(request: Request, env: Env): Promise<Response>
 		case 'POST':
 			try {
 				// Parse JSON body
-				const data = await request.json() as { userId: string; options?: ApiKeyOptions };
+				const data = await request.json() as { clientId: string; options?: ApiKeyOptions };
 
 				// Validate required fields
-				if (!data.userId) {
-					return errorResponse(400, 'User ID is required');
+				if (!data.clientId) {
+					return errorResponse(400, 'Client ID is required');
 				}
 
-				// Check if user exists
-				const userKey = `user:${data.userId}`;
-				const user = await env.APIKI_KV.get(userKey, { type: 'json' });
-				if (!user) {
-					return errorResponse(404, 'User not found');
+				// Check if client exists
+				const clientKey = `client:${data.clientId}`;
+				const client = await env.APIKI_KV.get(clientKey, { type: 'json' });
+				if (!client) {
+					return errorResponse(404, 'Client not found');
 				}
 
 				// Create API key
-				const result = await createApiKey(data.userId, data.options || {}, env);
+				const result = await createApiKey(data.clientId, data.options || {}, env);
 
 				return new Response(
 					JSON.stringify({
@@ -146,11 +146,11 @@ async function handleAdminCredits(request: Request, env: Env): Promise<Response>
 
 	try {
 		// Parse JSON body
-		const data = await request.json() as { userId: string; amount: number };
+		const data = await request.json() as { clientId: string; amount: number };
 
 		// Validate required fields
-		if (!data.userId) {
-			return errorResponse(400, 'User ID is required');
+		if (!data.clientId) {
+			return errorResponse(400, 'Client ID is required');
 		}
 
 		// Validate amount
@@ -158,15 +158,15 @@ async function handleAdminCredits(request: Request, env: Env): Promise<Response>
 			return errorResponse(400, 'Amount must be a positive number');
 		}
 
-		// Check if user exists
-		const userKey = `user:${data.userId}`;
-		const user = await env.APIKI_KV.get(userKey, { type: 'json' });
-		if (!user) {
-			return errorResponse(404, 'User not found');
+		// Check if client exists
+		const clientKey = `client:${data.clientId}`;
+		const client = await env.APIKI_KV.get(clientKey, { type: 'json' });
+		if (!client) {
+			return errorResponse(404, 'Client not found');
 		}
 
 		// Add credits
-		const result = await addCredits(data.userId, data.amount, env);
+		const result = await addCredits(data.clientId, data.amount, env);
 
 		return new Response(
 			JSON.stringify({

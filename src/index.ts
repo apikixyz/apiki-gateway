@@ -2,7 +2,7 @@
 
 import type { Env, ExportedHandler } from './types';
 import { validateApiKey } from './services/apiKey';
-import { getUser } from './services/users';
+import { getClient } from './services/clients';
 import { getEndpointCost, processCredits } from './services/credits';
 import { forwardRequestToBackend } from './handlers/proxy';
 import { handleAdminRequest } from './handlers/admin';
@@ -17,7 +17,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 
 	// Skip OPTIONS requests (CORS preflight) early
 	if (method === 'OPTIONS') {
-		return handleCors(request);
+		return handleCors(request, env);
 	}
 
 	// Minimal logging to avoid performance impact
@@ -41,11 +41,11 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 			return errorResponse(403, 'Invalid API key');
 		}
 
-		// Get user data
-		const userId = keyData.userId;
-		const user = await getUser(userId, env);
-		if (!user) {
-			return errorResponse(403, 'User not found');
+		// Get client data
+		const clientId = keyData.clientId;
+		const client = await getClient(clientId, env);
+		if (!client) {
+			return errorResponse(403, 'Client not found');
 		}
 
 		// Determine endpoint cost
@@ -53,7 +53,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 		const cost = getEndpointCost(endpoint);
 
 		// Process credits
-		const creditResult = await processCredits(userId, cost, env);
+		const creditResult = await processCredits(clientId, cost, env);
 		if (!creditResult.success) {
 			return errorResponse(429, 'Insufficient credits', {
 				'X-Credits-Remaining': creditResult.remaining.toString(),
@@ -62,7 +62,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 		}
 
 		// Forward the request
-		return await forwardRequestToBackend(request, user, creditResult, env, requestId);
+		return await forwardRequestToBackend(request, client, creditResult, env, requestId);
 	} catch (error) {
 		console.error('Apiki gateway error:', error);
 		return errorResponse(500, 'Gateway error');

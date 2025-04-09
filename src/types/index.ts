@@ -2,7 +2,7 @@
 
 // API Key related interfaces
 export interface ApiKeyData {
-	userId: string;
+	clientId: string;
 	active: boolean;
 	createdAt: string;
 	expiresAt: string | null;
@@ -15,21 +15,23 @@ export interface ApiKeyOptions {
 	name?: string;
 }
 
-// User related interfaces
-export interface UserData {
+// Client related interfaces (renamed from User)
+export interface ClientData {
 	id: string;
 	createdAt: string;
 	plan: string;
 	name: string;
 	email: string;
-	[key: string]: any;
+	type: 'service' | 'application' | 'personal';
+	metadata: Record<string, any>;
 }
 
-export interface CreateUserData {
+export interface CreateClientData {
 	plan?: string;
 	name: string;
 	email: string;
-	[key: string]: any;
+	type?: 'service' | 'application' | 'personal';
+	metadata?: Record<string, any>;
 }
 
 // Credits related interfaces
@@ -61,6 +63,7 @@ export interface BackendConfig {
 export interface Env {
 	APIKI_KV: KVNamespace;
 	ADMIN_AUTH_KEY: string;
+	ALLOWED_ORIGINS?: string;
 }
 
 // Extend global interfaces for Cloudflare Workers

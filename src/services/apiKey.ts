@@ -51,7 +51,7 @@ export async function validateApiKey(apiKey: string, env: Env): Promise<ApiKeyDa
 	return keyData;
 }
 
-export async function createApiKey(userId: string, options: ApiKeyOptions = {}, env: Env): Promise<{ apiKey: string } & ApiKeyData> {
+export async function createApiKey(clientId: string, options: ApiKeyOptions = {}, env: Env): Promise<{ apiKey: string } & ApiKeyData> {
 	// Generate a secure API key with more entropy (32 bytes instead of 16)
 	const buffer = new Uint8Array(32);
 	crypto.getRandomValues(buffer);
@@ -65,7 +65,7 @@ export async function createApiKey(userId: string, options: ApiKeyOptions = {}, 
 
 	// Create API key data
 	const keyData: ApiKeyData = {
-		userId,
+		clientId,
 		active: true,
 		createdAt: new Date().toISOString(),
 		expiresAt: options.expiresAt || null,
@@ -75,16 +75,16 @@ export async function createApiKey(userId: string, options: ApiKeyOptions = {}, 
 	// Store API key
 	await env.APIKI_KV.put(`apikey:${apiKey}`, JSON.stringify(keyData));
 
-	// Link API key to user
-	const userKeysKey = `keys:${userId}`;
-	const userKeys = JSON.parse((await env.APIKI_KV.get(userKeysKey)) || '[]');
-	userKeys.push({
+	// Link API key to client
+	const clientKeysKey = `keys:${clientId}`;
+	const clientKeys = JSON.parse((await env.APIKI_KV.get(clientKeysKey)) || '[]');
+	clientKeys.push({
 		key: apiKey,
 		name: options.name || 'API Key',
 		createdAt: keyData.createdAt,
 	});
 
-	await env.APIKI_KV.put(userKeysKey, JSON.stringify(userKeys));
+	await env.APIKI_KV.put(clientKeysKey, JSON.stringify(clientKeys));
 
 	return { apiKey, ...keyData };
 }

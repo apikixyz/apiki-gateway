@@ -1,10 +1,11 @@
-import { UserData, CreditResult, Env } from '../types';
+import { ClientData, CreditResult, Env } from '../types';
 import { findBackendConfig } from '../services/backends';
 import { logDebug } from '../utils/logging';
+import { errorResponse } from '../utils/response';
 
 export async function forwardRequestToBackend(
 	request: Request,
-	user: UserData,
+	client: ClientData,
 	creditResult: CreditResult,
 	env: Env,
 	requestId: string
@@ -29,9 +30,10 @@ export async function forwardRequestToBackend(
 		}
 	}
 
-	// Add standard user headers
-	headers.set('X-Apiki-User-Id', user.id);
-	headers.set('X-Apiki-Plan', user.plan);
+	// Add standard client headers
+	headers.set('X-Apiki-Client-Id', client.id);
+	headers.set('X-Apiki-Client-Type', client.type);
+	headers.set('X-Apiki-Plan', client.plan);
 	headers.set('X-Request-ID', requestId);
 
 	// Add credit information headers if configured
@@ -119,18 +121,8 @@ export async function forwardRequestToBackend(
 		console.error(`Backend request failed: ${error}`);
 
 		// Return a gateway error
-		return new Response(
-			JSON.stringify({
-				error: 'Backend request failed',
-				code: 502,
-			}),
-			{
-				status: 502,
-				headers: {
-					'Content-Type': 'application/json',
-					'X-Request-ID': requestId,
-				},
-			}
-		);
+		return errorResponse(502, 'Backend request failed', {
+			'X-Request-ID': requestId,
+		});
 	}
 }
