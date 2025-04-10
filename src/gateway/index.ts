@@ -1,13 +1,12 @@
 // APIKI Gateway - Cloudflare Worker for simple API Key Validation and Credit Management
 
-import { logDebug } from '@/shared/utils/logging';
-import { errorResponse, handleCors } from '@/shared/utils/response';
-import type { Env, ExportedHandler } from '@/shared/types';
-
+import type { Env, ExportedHandler, TargetConfig } from '../shared/types';
+import { findTargetConfig } from './services/target'; // Import from new target service
+import { logDebug } from '../shared/utils/logging';
 import { validateApiKey } from './services/apiKey';
-import { findBackendConfig } from './services/backend';
 import { getClient } from './services/clients';
 import { getEndpointCost, processCredits } from './services/credits';
+import { errorResponse, handleCors } from '../shared/utils/response';
 
 /**
  * Main entry point for the API Gateway Worker
@@ -55,65 +54,65 @@ export default {
 				});
 			}
 
-			// Find the appropriate backend configuration for this request
-			const backendConfig = await findBackendConfig(path, env);
+			// Find the appropriate target for this request
+			const targetConfig = await findTargetConfig(path, env);
 
-			if (!backendConfig) {
-				logDebug('gateway', `No backend found for path: ${path}`);
-				return errorResponse(404, 'No backend found for this path');
+			if (!targetConfig) {
+				logDebug('gateway', `No target found for path: ${path}`);
+				return errorResponse(404, 'No target found for this path');
 			}
 
-			// Build the backend URL
-			const backendUrl = new URL(path, backendConfig.targetUrl);
+			// Build the target URL
+			const targetUrl = new URL(path, targetConfig.targetUrl);
 
 			// Copy query parameters
 			url.searchParams.forEach((value, key) => {
-				backendUrl.searchParams.append(key, value);
+				targetUrl.searchParams.append(key, value);
 			});
 
-			// Create new request to the backend
+			// Create new request to the target
 			const headers = new Headers(request.headers);
 
 			// Add custom headers if configured
-			if (backendConfig.customHeaders) {
-				Object.entries(backendConfig.customHeaders).forEach(([key, value]) => {
+			if (targetConfig.customHeaders) {
+				Object.entries(targetConfig.customHeaders).forEach(([key, value]) => {
 					headers.set(key, value);
 				});
 			}
 
 			// Add credits header if configured
-			if (backendConfig.addCreditsHeader) {
+			if (targetConfig.addCreditsHeader) {
 				headers.set('X-Credits-Remaining', creditResult.remaining.toString());
 			}
 
 			// Optionally forward the API key
-			if (!backendConfig.forwardApiKey) {
+			if (!targetConfig.forwardApiKey) {
 				headers.delete('X-API-Key');
 			}
 
 			// Create the fetch request
-			const fetchRequest = new Request(backendUrl.toString(), {
+			const fetchRequest = new Request(targetUrl.toString(), {
 				method: request.method,
 				headers: headers,
 				body: request.body,
 			});
 
-			logDebug('gateway:proxy', `Proxying request to: ${backendUrl.toString()}`, { requestId, origin: request.headers.get('Origin') });
+			logDebug('gateway:proxy', `Proxying request to: ${targetUrl.toString()}`, { requestId, origin: request.headers.get('Origin') });
 
-			// Forward the request to the backend
-			const backendResponse = await fetch(fetchRequest);
+			// Forward the request to the target
+			const targetResponse = await fetch(fetchRequest);
 
 			// Clone the response to modify it
-			const responseHeaders = new Headers(backendResponse.headers);
+			const responseHeaders = new Headers(targetResponse.headers);
 
 			// Add gateway headers
 			responseHeaders.set('X-Api-Gateway', 'true');
 			responseHeaders.set('X-Request-ID', requestId);
 
 			// Return the response
-			return new Response(backendResponse.body, {
-				status: backendResponse.status,
-				statusText: backendResponse.statusText,
+			return new Response(targetResponse.body, {
+				status: targetResponse.status,
+				statusText: targetResponse.statusText,
 				headers: responseHeaders,
 			});
 		} catch (error: unknown) {

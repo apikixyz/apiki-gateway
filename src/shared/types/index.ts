@@ -46,11 +46,11 @@ export interface CreditResult {
 	used?: number;
 }
 
-// Backend configuration interfaces
-export interface BackendConfig {
+// Target configuration interfaces
+export interface TargetConfig {
 	id: string;
 	pattern: string; // URL pattern to match (can be regex or simple path)
-	targetUrl: string; // The target backend URL
+	targetUrl: string; // The destination URL to forward requests to
 	isRegex: boolean; // Whether pattern is a regex
 	addCreditsHeader: boolean; // Whether to add the credits header
 	forwardApiKey: boolean; // Whether to forward the original API key
