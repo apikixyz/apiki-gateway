@@ -29,7 +29,7 @@ export class SimpleCache {
 
 		// Auto cleanup expired entries every minute
 		// This helps prevent memory leaks in long-running workers
-		setInterval(() => this.cleanupExpired(), 60000);
+		// setInterval(() => this.cleanupExpired(), 60000);
 	}
 
 	/**
