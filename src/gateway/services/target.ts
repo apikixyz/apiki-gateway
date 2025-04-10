@@ -1,8 +1,8 @@
 // Target service for gateway
-import { TargetConfig, Env } from '../../shared/types';
-import { SimpleCache } from '../../shared/utils/cache';
-import { logDebug } from '../../shared/utils/logging';
-import { KeyPrefixes, getValue } from '../../shared/utils/kv';
+import type { TargetConfig, Env } from '@/shared/types';
+import { SimpleCache } from '@/shared/utils/cache';
+import { logDebug } from '@/shared/utils/logging';
+import { KeyPrefixes, getValue } from '@/shared/utils/kv';
 
 // Initialize target caches
 const targetCache = new SimpleCache();

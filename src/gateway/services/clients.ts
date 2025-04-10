@@ -1,7 +1,7 @@
 // Client service for gateway (minimal version)
-import { ClientData, Env } from '../../shared/types';
-import { SimpleCache } from '../../shared/utils/cache';
-import { KeyPrefixes } from '../../shared/utils/kv';
+import type { ClientData, Env } from '@/shared/types';
+import { SimpleCache } from '@/shared/utils/cache';
+import { KeyPrefixes } from '@/shared/utils/kv';
 
 // Initialize client cache
 const clientCache = new SimpleCache();
@@ -11,7 +11,7 @@ const clientCache = new SimpleCache();
  */
 export async function getClient(clientId: string, env: Env): Promise<ClientData | null> {
 	// Check cache first for better performance
-	const cacheKey = `client:${clientId}`;
+	const cacheKey = KeyPrefixes.CLIENT.key(clientId);
 	const cachedClient = clientCache.get<ClientData>(cacheKey);
 	if (cachedClient) {
 		return cachedClient;

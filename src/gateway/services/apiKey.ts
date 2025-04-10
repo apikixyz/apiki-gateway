@@ -1,8 +1,8 @@
 // API Key service for gateway (validation only)
-import type { ApiKeyData, Env } from '../../shared/types';
-import { SimpleCache } from '../../shared/utils/cache';
-import { logDebug } from '../../shared/utils/logging';
-import { KeyPrefixes } from '../../shared/utils/kv';
+import type { ApiKeyData, Env } from '@/shared/types';
+import { SimpleCache } from '@/shared/utils/cache';
+import { logDebug } from '@/shared/utils/logging';
+import { KeyPrefixes } from '@/shared/utils/kv';
 
 // Initialize API key cache
 const apiKeyCache = new SimpleCache();
@@ -34,21 +34,14 @@ export async function validateApiKey(apiKey: string, env: Env): Promise<ApiKeyDa
 	const keyData = await KeyPrefixes.API_KEY.get<ApiKeyData>(apiKey, env);
 	if (!keyData) return null;
 
-	// Cache the result (only if active - no need to cache inactive keys)
-	if (keyData.active) {
-		// Don't cache expired keys
-		if (!keyData.expiresAt || new Date(keyData.expiresAt) >= new Date()) {
-			apiKeyCache.set(cacheKey, keyData, 300000); // Cache for 5 minutes
-		}
-	}
+	// Check if key has expired
+	if (keyData.expiresAt && new Date(keyData.expiresAt) < new Date()) return null;
 
-	// Check if key is active
+	// Check if key is inactive
 	if (!keyData.active) return null;
 
-	// Check if key has expired
-	if (keyData.expiresAt && new Date(keyData.expiresAt) < new Date()) {
-		return null;
-	}
+	// Cache the result (only if active - no need to cache inactive keys)
+	apiKeyCache.set(cacheKey, keyData, 300000); // Cache for 5 minutes
 
 	// Track API key usage - don't wait for this
 	trackApiKeyUsage(apiKey, env).catch((err) => console.error('Error tracking API key usage:', err));

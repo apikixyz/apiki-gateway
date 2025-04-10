@@ -65,8 +65,3 @@ export interface Env {
 	ADMIN_AUTH_KEY: string;
 	ALLOWED_ORIGINS?: string;
 }
-
-// Extend global interfaces for Cloudflare Workers
-export interface ExportedHandler<Env> {
-	fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response>;
-}

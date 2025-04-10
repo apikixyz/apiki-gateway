@@ -1,12 +1,13 @@
 // APIKI Gateway - Cloudflare Worker for simple API Key Validation and Credit Management
 
-import type { Env, ExportedHandler, TargetConfig } from '../shared/types';
-import { findTargetConfig } from './services/target'; // Import from new target service
-import { logDebug } from '../shared/utils/logging';
+import type { Env } from '@/shared/types';
+import { logDebug } from '@/shared/utils/logging';
+import { errorResponse, handleCors } from '@/shared/utils/response';
+
 import { validateApiKey } from './services/apiKey';
 import { getClient } from './services/clients';
 import { getEndpointCost, processCredits } from './services/credits';
-import { errorResponse, handleCors } from '../shared/utils/response';
+import { findTargetConfig } from './services/target';
 
 /**
  * Main entry point for the API Gateway Worker
