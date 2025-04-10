@@ -1,0 +1,24 @@
+# Main gateway worker configuration
+name = "apiki-gateway"
+main = "src/gateway/index.ts"
+compatibility_date = "2025-03-21"
+compatibility_flags = ["nodejs_compat"]
+minify = true
+send_metrics = false
+workers_dev = true
+preview_urls = false
+
+[placement]
+mode = "smart"
+
+[observability]
+enabled = true
+
+[[kv_namespaces]]
+binding = "APIKI_KV"
+id = "bcd0bdc86dc54ef1b1f823dd93d9a662"
+
+# Admin worker configuration
+[env.admin]
+name = "apiki-admin"
+main = "src/admin/index.ts"
