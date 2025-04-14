@@ -45,7 +45,7 @@ export async function processCredits(clientId: string, cost: number, env: Env): 
 /**
  * Track usage - minimal implementation for performance
  */
-export async function trackUsage(clientId: string, amount: number, env: Env): Promise<void> {
+async function trackUsage(clientId: string, amount: number, env: Env): Promise<void> {
 	// Create usage key with today's date
 	const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
 	const usageKey = KeyPrefixes.USAGE.key(`${clientId}:${today}`);

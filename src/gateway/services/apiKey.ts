@@ -52,7 +52,7 @@ export async function validateApiKey(apiKey: string, env: Env): Promise<ApiKeyDa
 /**
  * Track API key usage - minimal implementation for performance
  */
-export async function trackApiKeyUsage(apiKey: string, env: Env): Promise<void> {
+async function trackApiKeyUsage(apiKey: string, env: Env): Promise<void> {
 	// Track usage for analytics - efficiently
 	const today = new Date().toISOString().split('T')[0];
 	const keyUsageKey = KeyPrefixes.KEY_USAGE.key(`${apiKey}:${today}`);

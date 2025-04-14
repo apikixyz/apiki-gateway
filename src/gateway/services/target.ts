@@ -11,7 +11,7 @@ const targetsListCache = new SimpleCache();
 /**
  * Match a request path against a target pattern
  */
-export function matchTargetPattern(path: string, config: TargetConfig): boolean {
+function matchTargetPattern(path: string, config: TargetConfig): boolean {
 	if (config.isRegex) {
 		try {
 			const regex = new RegExp(config.pattern);
