@@ -1,9 +1,7 @@
 /**
  * Shared authentication utilities
  */
-import { Env } from '../types';
 import { logDebug } from './logging';
-import { generateHash } from './crypto';
 
 // Cache auth results for 5 minutes
 const AUTH_CACHE_TTL = 300000;
@@ -68,12 +66,12 @@ function validateAdminToken(token: string, env: Env): AuthResult {
   // Cache the result
   authCache.set(cacheKey, {
     valid: isValid,
-    expires: now + AUTH_CACHE_TTL
+    expires: now + AUTH_CACHE_TTL,
   });
 
   return {
     valid: isValid,
-    message: isValid ? undefined : 'Invalid token'
+    message: isValid ? undefined : 'Invalid token',
   };
 }
 
@@ -102,11 +100,11 @@ function validateAdminKey(key: string, env: Env): AuthResult {
   // Cache the result
   authCache.set(cacheKey, {
     valid: isValid,
-    expires: now + AUTH_CACHE_TTL
+    expires: now + AUTH_CACHE_TTL,
   });
 
   return {
     valid: isValid,
-    message: isValid ? undefined : 'Invalid admin key'
+    message: isValid ? undefined : 'Invalid admin key',
   };
 }

@@ -1,9 +1,10 @@
 // Client management service for admin
-import { ClientData, CreateClientData, Env } from '../../shared/types';
-import { logDebug } from '../../shared/utils/logging';
-import { KeyPrefixes } from '../../shared/utils/kv';
-import { SimpleCache } from '../../shared/utils/cache';
-import { generateApiKey } from '../../shared/utils/crypto';
+
+import type { ClientData, CreateClientData } from '@/shared/types';
+import { SimpleCache } from '@/shared/utils/cache';
+import { logDebug } from '@/shared/utils/logging';
+import { generateApiKey } from '@/shared/utils/crypto';
+import { KV_CLIENT, KV_API_KEY } from '@/shared/utils/kv';
 
 // Cache for clients list
 const clientsListCache = new SimpleCache();
@@ -19,7 +20,7 @@ export async function listClients(env: Env): Promise<{ id: string; data: ClientD
 
     // If not in cache, get from KV
     if (!clientsIdList) {
-      clientsIdList = await env.APIKI_KV.get(CLIENT_LIST_KEY, { type: 'json' }) as string[] || [];
+      clientsIdList = ((await env.APIKI_KV.get(CLIENT_LIST_KEY, { type: 'json' })) as string[]) || [];
       if (clientsIdList.length > 0) {
         clientsListCache.set(CLIENT_LIST_KEY, clientsIdList, 300000); // Cache for 5 minutes
       }
@@ -30,16 +31,16 @@ export async function listClients(env: Env): Promise<{ id: string; data: ClientD
       // Get all clients in parallel
       const clients = await Promise.all(
         clientsIdList.map(async (id) => {
-          const data = await KeyPrefixes.CLIENT.get<ClientData>(id, env);
+          const data = await KV_CLIENT.get<ClientData>(id, env);
           return { id, data: data || null };
         })
       );
 
-      return clients.filter(client => client.data !== null) as { id: string; data: ClientData }[];
+      return clients.filter((client) => client.data !== null) as { id: string; data: ClientData }[];
     }
 
     // Fallback to listing all keys with the CLIENT prefix
-    const prefix = KeyPrefixes.CLIENT.key('').split(':')[0] + ':';
+    const prefix = KV_CLIENT.key('').split(':')[0] + ':';
     const keys = await env.APIKI_KV.list({ prefix });
 
     // Get the data for each key in parallel
@@ -47,13 +48,13 @@ export async function listClients(env: Env): Promise<{ id: string; data: ClientD
       keys.keys.map(async (key) => {
         // Extract the key ID from the full KV key name
         const id = key.name.substring(prefix.length);
-        const data = await KeyPrefixes.CLIENT.get<ClientData>(id, env);
+        const data = await KV_CLIENT.get<ClientData>(id, env);
         return { id, data: data || null };
       })
     );
 
     // Filter out any keys with null data
-    return clients.filter(client => client.data !== null) as { id: string; data: ClientData }[];
+    return clients.filter((client) => client.data !== null) as { id: string; data: ClientData }[];
   } catch (error) {
     console.error('Error listing clients:', error);
     return [];
@@ -65,7 +66,7 @@ export async function listClients(env: Env): Promise<{ id: string; data: ClientD
  */
 export async function getClient(clientId: string, env: Env): Promise<ClientData | null> {
   try {
-    return await KeyPrefixes.CLIENT.get<ClientData>(clientId, env);
+    return await KV_CLIENT.get<ClientData>(clientId, env);
   } catch (error) {
     console.error('Error getting client:', error);
     return null;
@@ -75,10 +76,7 @@ export async function getClient(clientId: string, env: Env): Promise<ClientData 
 /**
  * Create a new client
  */
-export async function createClient(
-  data: CreateClientData,
-  env: Env
-): Promise<{ id: string; client: ClientData }> {
+export async function createClient(data: CreateClientData, env: Env): Promise<{ id: string; client: ClientData }> {
   try {
     // Generate a random client ID
     const clientId = generateApiKey().substring(4); // Remove the prefix
@@ -95,12 +93,12 @@ export async function createClient(
     };
 
     // Store the client
-    await KeyPrefixes.CLIENT.put(clientId, clientData, env);
+    await KV_CLIENT.put(clientId, clientData, env);
 
     // Add to clients list for easier lookup
     let clientsList = clientsListCache.get<string[]>(CLIENT_LIST_KEY);
     if (!clientsList) {
-      clientsList = await env.APIKI_KV.get(CLIENT_LIST_KEY, { type: 'json' }) as string[] || [];
+      clientsList = ((await env.APIKI_KV.get(CLIENT_LIST_KEY, { type: 'json' })) as string[]) || [];
     }
 
     if (!clientsList.includes(clientId)) {
@@ -122,14 +120,10 @@ export async function createClient(
 /**
  * Update a client
  */
-export async function updateClient(
-  clientId: string,
-  updates: Partial<ClientData>,
-  env: Env
-): Promise<ClientData | null> {
+export async function updateClient(clientId: string, updates: Partial<ClientData>, env: Env): Promise<ClientData | null> {
   try {
     // Get the current client data
-    const currentData = await KeyPrefixes.CLIENT.get<ClientData>(clientId, env);
+    const currentData = await KV_CLIENT.get<ClientData>(clientId, env);
 
     if (!currentData) {
       return null;
@@ -145,7 +139,7 @@ export async function updateClient(
     };
 
     // Store the updated client
-    await KeyPrefixes.CLIENT.put(clientId, updatedData, env);
+    await KV_CLIENT.put(clientId, updatedData, env);
 
     logDebug('admin', `Updated client ${clientId}`);
 
@@ -162,21 +156,21 @@ export async function updateClient(
 export async function deleteClient(clientId: string, env: Env): Promise<boolean> {
   try {
     // Check if client exists
-    const client = await KeyPrefixes.CLIENT.get<ClientData>(clientId, env);
+    const client = await KV_CLIENT.get<ClientData>(clientId, env);
     if (!client) {
       return false;
     }
 
     // Delete the client
-    await KeyPrefixes.CLIENT.delete(clientId, env);
+    await KV_CLIENT.delete(clientId, env);
 
     // Update the clients list
     let clientsList = clientsListCache.get<string[]>(CLIENT_LIST_KEY);
     if (!clientsList) {
-      clientsList = await env.APIKI_KV.get(CLIENT_LIST_KEY, { type: 'json' }) as string[] || [];
+      clientsList = ((await env.APIKI_KV.get(CLIENT_LIST_KEY, { type: 'json' })) as string[]) || [];
     }
 
-    const updatedList = clientsList.filter(id => id !== clientId);
+    const updatedList = clientsList.filter((id) => id !== clientId);
     if (clientsList.length !== updatedList.length) {
       await env.APIKI_KV.put(CLIENT_LIST_KEY, JSON.stringify(updatedList));
       // Update cache
@@ -185,13 +179,13 @@ export async function deleteClient(clientId: string, env: Env): Promise<boolean>
 
     // Also delete any API keys associated with this client
     const clientKeysKey = `client:${clientId}:keys`;
-    const clientKeys = await env.APIKI_KV.get(clientKeysKey, { type: 'json' }) as string[] || [];
+    const clientKeys = ((await env.APIKI_KV.get(clientKeysKey, { type: 'json' })) as string[]) || [];
 
     // Delete each API key in parallel
     if (clientKeys.length > 0) {
       await Promise.all(
         clientKeys.map(async (apiKey) => {
-          await KeyPrefixes.API_KEY.delete(apiKey, env);
+          await KV_API_KEY.delete(apiKey, env);
         })
       );
 

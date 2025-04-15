@@ -8,17 +8,21 @@ send_metrics = false
 workers_dev = true
 preview_urls = false
 
+kv_namespaces = [
+  { binding = "APIKI_KV", id = "bcd0bdc86dc54ef1b1f823dd93d9a662" },
+]
+
 [placement]
 mode = "smart"
 
 [observability]
 enabled = true
 
-[[kv_namespaces]]
-binding = "APIKI_KV"
-id = "bcd0bdc86dc54ef1b1f823dd93d9a662"
-
 # Admin worker configuration
 [env.admin]
 name = "apiki-admin"
 main = "src/admin/index.ts"
+
+kv_namespaces = [
+  { binding = "APIKI_KV", id = "bcd0bdc86dc54ef1b1f823dd93d9a662" },
+]

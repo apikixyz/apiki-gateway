@@ -41,27 +41,3 @@ export function generateAdminKey(): string {
 
   return prefix + result;
 }
-
-/**
- * Generate a secure hash from a string
- * @param input String to hash
- */
-export async function generateHash(input: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(input);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  return hashHex;
-}
-
-/**
- * Generate a nonce for security headers and other uses
- */
-export function generateNonce(): string {
-  const nonceArray = new Uint8Array(16);
-  crypto.getRandomValues(nonceArray);
-  return Array.from(nonceArray)
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
-}

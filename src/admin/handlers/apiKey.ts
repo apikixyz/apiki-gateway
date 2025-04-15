@@ -1,7 +1,7 @@
-import { Env } from '../../shared/types';
+// Admin API Key handler
+
+import { errorResponse, successResponse } from '@/shared/utils/response';
 import { createApiKey, getApiKey, updateApiKey, deleteApiKey, listApiKeys } from '../services/apiKey';
-import { logDebug } from '../../shared/utils/logging';
-import { errorResponse, successResponse } from '../../shared/utils/response';
 
 /**
  * Handle API Key management requests
@@ -35,7 +35,7 @@ export async function handleApiKeyRequest(request: Request, env: Env): Promise<R
 
     // POST /admin/api-keys - Create a new API key
     if (method === 'POST' && path === '/admin/api-keys') {
-      const data = await request.json() as { clientId: string; expiresAt?: string; restrictions?: Record<string, any>; name?: string };
+      const data = (await request.json()) as { clientId: string; expiresAt?: string; restrictions?: Record<string, any>; name?: string };
 
       if (!data.clientId) {
         return errorResponse(400, 'Client ID is required');
@@ -52,7 +52,7 @@ export async function handleApiKeyRequest(request: Request, env: Env): Promise<R
         return errorResponse(400, 'Invalid API Key ID');
       }
 
-      const data = await request.json() as Partial<{ active: boolean; expiresAt: string | null; restrictions: Record<string, any> }>;
+      const data = (await request.json()) as Partial<{ active: boolean; expiresAt: string | null; restrictions: Record<string, any> }>;
       const updated = await updateApiKey(apiKeyId, data, env);
 
       if (!updated) {

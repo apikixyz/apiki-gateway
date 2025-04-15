@@ -1,7 +1,8 @@
-import { Env, ClientData, CreateClientData } from '../../shared/types';
+// Admin client handler
+
+import type { ClientData, CreateClientData } from '@/shared/types';
+import { errorResponse, successResponse } from '@/shared/utils/response';
 import { createClient, getClient, updateClient, deleteClient, listClients } from '../services/client';
-import { logDebug } from '../../shared/utils/logging';
-import { errorResponse, successResponse } from '../../shared/utils/response';
 
 /**
  * Handle Client management requests
@@ -35,7 +36,7 @@ export async function handleClientRequest(request: Request, env: Env): Promise<R
 
     // POST /admin/clients - Create a new client
     if (method === 'POST' && path === '/admin/clients') {
-      const data = await request.json() as CreateClientData;
+      const data = (await request.json()) as CreateClientData;
 
       if (!data.name) {
         return errorResponse(400, 'Client name is required');
@@ -52,7 +53,7 @@ export async function handleClientRequest(request: Request, env: Env): Promise<R
         return errorResponse(400, 'Invalid Client ID');
       }
 
-      const data = await request.json() as Partial<ClientData>;
+      const data = (await request.json()) as Partial<ClientData>;
       const updated = await updateClient(clientId, data, env);
 
       if (!updated) {
