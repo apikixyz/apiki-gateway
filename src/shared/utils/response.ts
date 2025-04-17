@@ -64,39 +64,13 @@ export function successResponse<T>(data: T, status: number = 200, extraHeaders: 
  * Handle CORS preflight requests
  */
 export function handleCors(request: Request, env?: Env): Response {
-  const origin = request.headers.get('Origin');
-  let allowedOrigin = 'null';
-
-  if (origin) {
-    try {
-      // Get allowed origins from environment variable
-      const allowedOrigins =
-        env?.ALLOWED_ORIGINS?.split(',')
-          .map((o) => o.trim())
-          .filter(Boolean) || [];
-
-      // For development, if no allowed origins configured, fallback to a safer approach than '*'
-      if (allowedOrigins.length === 0) {
-        // Only allow the requesting origin if it's a secure connection
-        allowedOrigin = origin.startsWith('https://') ? origin : 'null';
-      } else {
-        // For production environments, strictly validate against configured domains
-        allowedOrigin = allowedOrigins.includes(origin) ? origin : 'null';
-      }
-    } catch (error) {
-      // If there's any error processing CORS, default to secure options
-      console.error('Error processing CORS:', error);
-    }
-  }
+  const corsHeaders = getCorsHeaders(request, env);
 
   return new Response(null, {
     status: 204,
     headers: {
       ...DEFAULT_SECURITY_HEADERS,
-      'Access-Control-Allow-Origin': allowedOrigin,
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, X-API-Key, Authorization, X-Admin-Key',
-      'Access-Control-Max-Age': '86400',
+      ...corsHeaders,
       'Content-Security-Policy': `default-src 'self'; script-src 'self'`,
     },
   });
@@ -116,24 +90,41 @@ export function addSecurityHeaders(response: Response, request: Request, env?: E
   });
 
   // Add CORS headers if needed
-  const origin = request.headers.get('Origin');
-  if (origin) {
-    const allowedOrigins =
-      env?.ALLOWED_ORIGINS?.split(',')
-        .map((o) => o.trim())
-        .filter(Boolean) || [];
-    const allowOrigin =
-      allowedOrigins.length > 0 ? (allowedOrigins.includes(origin) ? origin : 'null') : origin.startsWith('https://') ? origin : 'null';
-
-    headers.set('Access-Control-Allow-Origin', allowOrigin);
-    headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    headers.set('Access-Control-Allow-Headers', 'Content-Type, X-API-Key, Authorization, X-Admin-Key');
-    headers.set('Access-Control-Max-Age', '86400');
-  }
+  const corsHeaders = getCorsHeaders(request, env);
 
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
-    headers,
+    headers: {
+      ...headers,
+      ...corsHeaders,
+    },
   });
+}
+
+function getCorsHeaders(request: Request, env?: Env): Headers {
+  const headers = new Headers();
+  const origin = request.headers.get('Origin');
+  let allowedOrigin = 'null';
+
+  if (origin) {
+    try {
+      const allowedOrigins =
+        env?.ALLOWED_ORIGINS?.split(',')
+          .map((o) => o.trim())
+          .filter(Boolean) || [];
+
+      allowedOrigin =
+        allowedOrigins.length > 0 ? (allowedOrigins.includes(origin) ? origin : 'null') : origin.startsWith('https://') ? origin : 'null';
+    } catch (error) {
+      console.error('Error processing CORS:', error);
+    }
+  }
+
+  headers.set('Access-Control-Allow-Origin', allowedOrigin);
+  headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  headers.set('Access-Control-Allow-Headers', 'Content-Type, X-API-Key, Authorization, X-Admin-Key');
+  headers.set('Access-Control-Max-Age', '86400');
+
+  return headers;
 }
