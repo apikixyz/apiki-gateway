@@ -2,8 +2,8 @@
 
 import type { ClientData, CreateClientData } from '@/shared/types';
 import { logDebug } from '@/shared/utils/logging';
-import { generateApiKey } from '@/shared/utils/crypto';
 import { KV_CLIENT, KV_API_KEY } from '@/shared/utils/kv';
+import { generateApiKey } from '@/shared/utils/crypto';
 
 const CLIENT_LIST_KEY = 'clients:list';
 
@@ -13,7 +13,7 @@ const CLIENT_LIST_KEY = 'clients:list';
 export async function listClients(env: Env): Promise<{ id: string; data: ClientData }[]> {
   try {
     // Get the list of clients from KV
-    let clientsIdList = (await env.APIKI_KV.get(CLIENT_LIST_KEY, { type: 'json' })) as string[] || [];
+    let clientsIdList = ((await env.APIKI_KV.get(CLIENT_LIST_KEY, { type: 'json' })) as string[]) || [];
 
     // If we have a client list, use it for more efficient lookup
     if (clientsIdList && clientsIdList.length > 0) {

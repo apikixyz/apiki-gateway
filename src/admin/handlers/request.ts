@@ -2,7 +2,7 @@
 
 import { validateAdminAuth } from '@/shared/utils/auth';
 import { logDebug } from '@/shared/utils/logging';
-import { errorResponse, addSecurityHeaders, handleCors as corsHandler } from '@/shared/utils/response';
+import { errorResponse, addSecurityHeaders, handleCors } from '@/shared/utils/response';
 
 import { handleApiKeyRequest } from './apiKey';
 import { handleClientRequest } from './client';
@@ -24,7 +24,7 @@ export async function handleAdminRequest(request: Request, env: Env): Promise<Re
   try {
     // Skip CORS preflight requests
     if (request.method === 'OPTIONS') {
-      return corsHandler(request, env);
+      return handleCors(request, env);
     }
 
     // Authenticate admin request
