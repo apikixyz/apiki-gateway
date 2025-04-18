@@ -1,13 +1,8 @@
 // Target service for gateway
 
 import type { TargetConfig } from '@/shared/types';
-import { SimpleCache } from '@/shared/utils/cache';
 import { logDebug } from '@/shared/utils/logging';
 import { KV_TARGET } from '@/shared/utils/kv';
-
-// Initialize target caches
-const targetCache = new SimpleCache();
-const targetsListCache = new SimpleCache();
 
 /**
  * Match a request path against a target pattern
@@ -35,21 +30,8 @@ export function matchTargetPattern(path: string, config: TargetConfig): boolean 
  * Find the appropriate target configuration for a request path
  */
 export async function findTargetConfig(path: string, env: Env): Promise<TargetConfig | null> {
-  // Get all target configs from cache first
-  let targetsList = targetsListCache.get<string[]>('targets:list');
-
-  // If not in cache, get from KV
-  if (!targetsList) {
-    targetsList = (await KV_TARGET.get<string[]>('targets:list', env)) ?? undefined;
-
-    // Cache the list if found
-    if (targetsList) {
-      targetsListCache.set('targets:list', targetsList, 300000); // Cache for 5 minutes
-    } else {
-      logDebug('target', 'No target configurations found');
-      return null;
-    }
-  }
+  // Get all target configs from KV
+  const targetsList = await KV_TARGET.get<string[]>('targets:list', env);
 
   if (!targetsList || targetsList.length === 0) {
     logDebug('target', 'No target configurations found');
@@ -58,20 +40,11 @@ export async function findTargetConfig(path: string, env: Env): Promise<TargetCo
 
   // Try to find a matching target
   for (const targetId of targetsList) {
-    // Check cache first
-    const cacheKey = `target:${targetId}`;
-    let config = targetCache.get<TargetConfig>(cacheKey);
+    // Get target config from KV
+    const config = await KV_TARGET.get<TargetConfig>(targetId, env);
 
-    // If not in cache, get from KV
     if (!config) {
-      config = (await KV_TARGET.get<TargetConfig>(targetId, env)) ?? undefined;
-
-      // Cache if found
-      if (config) {
-        targetCache.set(cacheKey, config, 300000); // Cache for 5 minutes
-      } else {
-        continue; // Skip if not found
-      }
+      continue; // Skip if not found
     }
 
     const isMatch = matchTargetPattern(path, config);

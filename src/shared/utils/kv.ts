@@ -116,6 +116,4 @@ export const KV_CLIENT = new KeyPrefix('client');
 export const KV_CLIENT_KEYS = new KeyPrefix('client:keys');
 export const KV_CREDITS = new KeyPrefix('credits');
 export const KV_EMAIL = new KeyPrefix('email');
-export const KV_KEY_USAGE = new KeyPrefix('keyusage');
 export const KV_TARGET = new KeyPrefix('target');
-export const KV_USAGE = new KeyPrefix('usage');

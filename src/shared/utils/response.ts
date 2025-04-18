@@ -71,7 +71,7 @@ export function handleCors(request: Request, env?: Env): Response {
     headers: {
       ...DEFAULT_SECURITY_HEADERS,
       ...corsHeaders,
-      'Content-Security-Policy': `default-src 'self'; script-src 'self'`,
+      // 'Content-Security-Policy': `default-src 'self'; script-src 'self'`,
     },
   });
 }
@@ -81,21 +81,13 @@ export function handleCors(request: Request, env?: Env): Response {
  */
 export function addSecurityHeaders(response: Response, request: Request, env?: Env): Response {
   const headers = new Headers(response.headers);
-
-  // Add security headers
-  Object.entries(DEFAULT_SECURITY_HEADERS).forEach(([key, value]) => {
-    if (!headers.has(key)) {
-      headers.set(key, value);
-    }
-  });
-
-  // Add CORS headers if needed
   const corsHeaders = getCorsHeaders(request, env);
 
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
     headers: {
+      ...DEFAULT_SECURITY_HEADERS,
       ...headers,
       ...corsHeaders,
     },

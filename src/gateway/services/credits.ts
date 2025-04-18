@@ -1,8 +1,7 @@
 // Credits service for gateway
 
 import type { CreditData, CreditResult } from '@/shared/types';
-import { logDebug } from '@/shared/utils/logging';
-import { KV_CREDITS, KV_USAGE } from '@/shared/utils/kv';
+import { KV_CREDITS } from '@/shared/utils/kv';
 
 /**
  * Process credits for a request - core gateway functionality
@@ -33,9 +32,6 @@ export async function processCredits(clientId: string, cost: number, env: Env): 
 
   await KV_CREDITS.put(clientId, updated, env);
 
-  // Track usage without blocking the main flow
-  trackUsage(clientId, cost, env).catch((err) => console.error('Error tracking usage:', err));
-
   return {
     success: true,
     remaining: newBalance,
@@ -44,28 +40,7 @@ export async function processCredits(clientId: string, cost: number, env: Env): 
 }
 
 /**
- * Track usage - minimal implementation for performance
- */
-async function trackUsage(clientId: string, amount: number, env: Env): Promise<void> {
-  // Create usage key with today's date
-  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-  const usageKey = KV_USAGE.key(`${clientId}:${today}`);
-
-  try {
-    // Get current usage - get without type:json for better performance
-    const currentUsage = parseInt((await KV_USAGE.getString(usageKey, env)) || '0');
-
-    // Update usage
-    const ttl = 90 * 24 * 60 * 60; // 90 days
-    await KV_USAGE.putString(usageKey, (currentUsage + amount).toString(), env, ttl);
-  } catch (error) {
-    // Non-blocking error handling
-    logDebug('trackUsage', 'Error tracking client usage', { error, clientId });
-  }
-}
-
-/**
- * Get request cost based on path pattern matching
+ * Get cost for a request - simple implementation
  */
 export function getRequestCost(path: string): number {
   // Define costs for different endpoints using patterns

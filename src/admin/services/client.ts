@@ -1,13 +1,10 @@
 // Client management service for admin
 
 import type { ClientData, CreateClientData } from '@/shared/types';
-import { SimpleCache } from '@/shared/utils/cache';
 import { logDebug } from '@/shared/utils/logging';
 import { generateApiKey } from '@/shared/utils/crypto';
 import { KV_CLIENT, KV_API_KEY } from '@/shared/utils/kv';
 
-// Cache for clients list
-const clientsListCache = new SimpleCache();
 const CLIENT_LIST_KEY = 'clients:list';
 
 /**
@@ -15,16 +12,8 @@ const CLIENT_LIST_KEY = 'clients:list';
  */
 export async function listClients(env: Env): Promise<{ id: string; data: ClientData }[]> {
   try {
-    // Try to get the list of clients from cache first
-    let clientsIdList = clientsListCache.get<string[]>(CLIENT_LIST_KEY);
-
-    // If not in cache, get from KV
-    if (!clientsIdList) {
-      clientsIdList = ((await env.APIKI_KV.get(CLIENT_LIST_KEY, { type: 'json' })) as string[]) || [];
-      if (clientsIdList.length > 0) {
-        clientsListCache.set(CLIENT_LIST_KEY, clientsIdList, 300000); // Cache for 5 minutes
-      }
-    }
+    // Get the list of clients from KV
+    let clientsIdList = (await env.APIKI_KV.get(CLIENT_LIST_KEY, { type: 'json' })) as string[] || [];
 
     // If we have a client list, use it for more efficient lookup
     if (clientsIdList && clientsIdList.length > 0) {
@@ -96,16 +85,11 @@ export async function createClient(data: CreateClientData, env: Env): Promise<{ 
     await KV_CLIENT.put(clientId, clientData, env);
 
     // Add to clients list for easier lookup
-    let clientsList = clientsListCache.get<string[]>(CLIENT_LIST_KEY);
-    if (!clientsList) {
-      clientsList = ((await env.APIKI_KV.get(CLIENT_LIST_KEY, { type: 'json' })) as string[]) || [];
-    }
+    const clientsList = ((await env.APIKI_KV.get(CLIENT_LIST_KEY, { type: 'json' })) as string[]) || [];
 
     if (!clientsList.includes(clientId)) {
       clientsList.push(clientId);
       await env.APIKI_KV.put(CLIENT_LIST_KEY, JSON.stringify(clientsList));
-      // Update cache
-      clientsListCache.set(CLIENT_LIST_KEY, clientsList, 300000);
     }
 
     logDebug('admin', `Created new client ${clientId}`);
@@ -165,16 +149,11 @@ export async function deleteClient(clientId: string, env: Env): Promise<boolean>
     await KV_CLIENT.delete(clientId, env);
 
     // Update the clients list
-    let clientsList = clientsListCache.get<string[]>(CLIENT_LIST_KEY);
-    if (!clientsList) {
-      clientsList = ((await env.APIKI_KV.get(CLIENT_LIST_KEY, { type: 'json' })) as string[]) || [];
-    }
-
+    const clientsList = ((await env.APIKI_KV.get(CLIENT_LIST_KEY, { type: 'json' })) as string[]) || [];
     const updatedList = clientsList.filter((id) => id !== clientId);
+
     if (clientsList.length !== updatedList.length) {
       await env.APIKI_KV.put(CLIENT_LIST_KEY, JSON.stringify(updatedList));
-      // Update cache
-      clientsListCache.set(CLIENT_LIST_KEY, updatedList, 300000);
     }
 
     // Also delete any API keys associated with this client
