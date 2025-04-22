@@ -1,7 +1,7 @@
 // APIKI Gateway - Cloudflare Worker for simple API Key Validation and Credit Management
 
 import { logDebug } from '@/shared/utils/logging';
-import { errorResponse, handleCors, addSecurityHeaders } from '@/shared/utils/response';
+import { errorResponse, handleCors, secureResponse } from '@/shared/utils/response';
 
 import { validateApiKey } from './services/apiKey';
 import { getClient } from './services/clients';
@@ -13,8 +13,6 @@ import { findTargetConfig } from './services/target';
  */
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url);
-    const path = url.pathname;
     const requestId = crypto.randomUUID().slice(0, 8); // Short ID for tracking
 
     try {
@@ -26,34 +24,38 @@ export default {
       // Get API key from header
       const apiKey = request.headers.get('X-API-Key');
       if (!apiKey) {
-        return addSecurityHeaders(errorResponse(401, 'API key required', { 'X-Request-ID': requestId }), request, env);
+        return errorResponse(401, 'API key required', { 'X-Request-ID': requestId }, request, env);
       }
 
       // Validate API key
       const keyData = await validateApiKey(apiKey, env);
       if (!keyData) {
-        return addSecurityHeaders(errorResponse(403, 'Invalid API key', { 'X-Request-ID': requestId }), request, env);
+        return errorResponse(403, 'Invalid API key', { 'X-Request-ID': requestId }, request, env);
       }
 
       // Get client data
       const clientId = keyData.clientId;
       const client = await getClient(clientId, env);
       if (!client) {
-        return addSecurityHeaders(errorResponse(403, 'Client not found', { 'X-Request-ID': requestId }), request, env);
+        return errorResponse(403, 'Client not found', { 'X-Request-ID': requestId }, request, env);
       }
 
       // Determine request cost
-      const cost = getRequestCost(path);
+      const url = new URL(request.url);
+      const path = url.pathname;
+      const requestCost = getRequestCost(path);
 
-      // Process credits
-      const creditResult = await processCredits(clientId, cost, env);
+      // Process credits and check if the request is allowed
+      const creditResult = await processCredits(clientId, requestCost, env);
       if (!creditResult.success) {
-        return addSecurityHeaders(
-          errorResponse(429, 'Insufficient credits', {
+        return errorResponse(
+          429,
+          'Insufficient credits',
+          {
             'X-Credits-Remaining': creditResult.remaining.toString(),
-            'X-Credits-Required': cost.toString(),
+            'X-Credits-Required': requestCost.toString(),
             'X-Request-ID': requestId,
-          }),
+          },
           request,
           env
         );
@@ -64,7 +66,7 @@ export default {
 
       if (!targetConfig) {
         logDebug('gateway', `No target found for path: ${path}`);
-        return addSecurityHeaders(errorResponse(404, 'No target found for this path', { 'X-Request-ID': requestId }), request, env);
+        return errorResponse(404, 'No target found for this path', { 'X-Request-ID': requestId }, request, env);
       }
 
       // Build the target URL
@@ -115,7 +117,7 @@ export default {
       responseHeaders.set('X-Request-ID', requestId);
 
       // Return the response with security headers
-      return addSecurityHeaders(
+      return secureResponse(
         new Response(targetResponse.body, {
           status: targetResponse.status,
           statusText: targetResponse.statusText,
@@ -126,7 +128,7 @@ export default {
       );
     } catch (error: unknown) {
       console.error(`Gateway error (${requestId}):`, error instanceof Error ? error.message : String(error));
-      return addSecurityHeaders(errorResponse(500, 'Internal Server Error', { 'X-Request-ID': requestId }), request, env);
+      return errorResponse(500, 'Internal Server Error', { 'X-Request-ID': requestId }, request, env);
     }
   },
 } as ExportedHandler<Env>;
