@@ -13,7 +13,7 @@ const DEFAULT_SECURITY_HEADERS = {
 // Default CORS headers
 const DEFAULT_CORS_HEADERS = {
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Admin-Key',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Admin-API-Key',
   'Access-Control-Max-Age': '86400', // 1 day
 };
 
