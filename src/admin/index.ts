@@ -4,7 +4,7 @@ import { logDebug } from '@/shared/utils/logging';
 import { errorResponse, handleCors } from '@/shared/utils/response';
 
 import { handleApiKeyRequest } from './handlers/apiKey';
-import { handleClientRequest } from './handlers/client';
+import { handleCreditRequest } from './handlers/credits';
 
 // Common headers for admin responses
 const ADMIN_DEFAULT_HEADERS = {
@@ -50,8 +50,8 @@ export default {
 
       if (path.startsWith('/admin/api-keys')) {
         return handleApiKeyRequest(request, env);
-      } else if (path.startsWith('/admin/clients')) {
-        return handleClientRequest(request, env);
+      } else if (path.startsWith('/admin/credits')) {
+        return handleCreditRequest(request, env);
       }
 
       // If no specific handler matches, return 404
