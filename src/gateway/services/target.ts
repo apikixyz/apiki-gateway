@@ -1,8 +1,6 @@
-// Target service for gateway
-
+import { targets } from '@/config/targets';
 import type { TargetConfig } from '@/shared/types';
 import { logDebug } from '@/shared/utils/logging';
-import { KV_TARGET } from '@/shared/utils/kv';
 
 /**
  * Match a request path against a target pattern
@@ -27,32 +25,19 @@ export function matchTargetPattern(path: string, config: TargetConfig): boolean 
 }
 
 /**
- * Find the appropriate target configuration for a request path
+ * Get the appropriate target configuration by targetId
  */
-export async function findTargetConfig(path: string, env: Env): Promise<TargetConfig | null> {
-  // Get all target configs from KV
-  const targetsList = await KV_TARGET.get<string[]>('targets:list', env);
-
-  if (!targetsList || targetsList.length === 0) {
+export function getTargetConfig(targetId: string): TargetConfig | null {
+  if (!targets || targets.length === 0) {
     logDebug('target', 'No target configurations found');
     return null;
   }
 
-  // Try to find a matching target
-  for (const targetId of targetsList) {
-    // Get target config from KV
-    const config = await KV_TARGET.get<TargetConfig>(targetId, env);
-
-    if (!config) {
-      continue; // Skip if not found
-    }
-
-    const isMatch = matchTargetPattern(path, config);
-
-    if (isMatch) {
-      return config;
-    }
+  const target = targets.find((target) => target.id === targetId);
+  if (!target) {
+    logDebug('target', `Target ${targetId} not found`);
+    return null;
   }
 
-  return null;
+  return target;
 }

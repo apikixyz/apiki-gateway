@@ -1,12 +1,11 @@
-// APIKI Gateway - Cloudflare Worker for simple API Key Validation and Credit Management
+// APIKI Gateway - Cloudflare Worker for simple API Key Validation and Usage Credit Management
 
 import { logDebug } from '@/shared/utils/logging';
 import { errorResponse, handleCors, secureResponse } from '@/shared/utils/response';
 
-import { validateApiKey } from './services/apiKey';
-import { getClient } from './services/clients';
-import { getRequestCost, processCredits } from './services/credits';
-import { findTargetConfig } from './services/target';
+import { getApiKeyConfig } from './services/apiKey';
+import { processCredits } from './services/credits';
+import { getTargetConfig, matchTargetPattern } from './services/target';
 
 /**
  * Main entry point for the API Gateway Worker
@@ -27,46 +26,45 @@ export default {
         return errorResponse(401, 'API key required', { 'X-Request-ID': requestId }, request, env);
       }
 
-      // Validate API key
-      const keyData = await validateApiKey(apiKey, env);
-      if (!keyData) {
+      // Validate API key and get the config for the target
+      const apiKeyConfig = await getApiKeyConfig(apiKey, env);
+      if (!apiKeyConfig || !apiKeyConfig.clientId || !apiKeyConfig.targetId) {
         return errorResponse(403, 'Invalid API key', { 'X-Request-ID': requestId }, request, env);
       }
 
-      // Get client data
-      const clientId = keyData.clientId;
-      const client = await getClient(clientId, env);
-      if (!client) {
-        return errorResponse(403, 'Client not found', { 'X-Request-ID': requestId }, request, env);
+      if (!apiKeyConfig.active || (apiKeyConfig.expiresAt && apiKeyConfig.expiresAt < Date.now())) {
+        return errorResponse(403, 'API key expired or inactive', { 'X-Request-ID': requestId }, request, env);
       }
 
-      // Determine request cost
+      // Get the target config by API key
+      const targetConfig = getTargetConfig(apiKeyConfig.targetId);
+      if (!targetConfig) {
+        return errorResponse(404, 'Target config not found for this API key', { 'X-Request-ID': requestId }, request, env);
+      }
+
+      // Check if the path matches the target pattern
       const url = new URL(request.url);
       const path = url.pathname;
-      const requestCost = getRequestCost(path);
+      if (!matchTargetPattern(path, targetConfig)) {
+        return errorResponse(404, 'Target not found for this path', { 'X-Request-ID': requestId }, request, env);
+      }
 
-      // Process credits and check if the request is allowed
-      const creditResult = await processCredits(clientId, requestCost, env);
+      // Check credits for the client to see if we can process the request
+      const creditResult = await processCredits(targetConfig, apiKeyConfig.clientId, env);
+
+      // If not enough credits, return a 429 error
       if (!creditResult.success) {
         return errorResponse(
           429,
           'Insufficient credits',
           {
             'X-Credits-Remaining': creditResult.remaining.toString(),
-            'X-Credits-Required': requestCost.toString(),
+            'X-Credits-Required': targetConfig.costInfo.cost.toString(),
             'X-Request-ID': requestId,
           },
           request,
           env
         );
-      }
-
-      // Find the appropriate target for this request
-      const targetConfig = await findTargetConfig(path, env);
-
-      if (!targetConfig) {
-        logDebug('gateway', `No target found for path: ${path}`);
-        return errorResponse(404, 'No target found for this path', { 'X-Request-ID': requestId }, request, env);
       }
 
       // Build the target URL
@@ -77,32 +75,8 @@ export default {
         targetUrl.searchParams.append(key, value);
       });
 
-      // Create new request to the target
-      const headers = new Headers(request.headers);
-
-      // Add custom headers if configured
-      if (targetConfig.customHeaders) {
-        Object.entries(targetConfig.customHeaders).forEach(([key, value]) => {
-          headers.set(key, value);
-        });
-      }
-
-      // Add credits header if configured
-      if (targetConfig.addCreditsHeader) {
-        headers.set('X-Credits-Remaining', creditResult.remaining.toString());
-      }
-
-      // Optionally forward the API key
-      if (!targetConfig.forwardApiKey) {
-        headers.delete('X-API-Key');
-      }
-
-      // Create the fetch request
-      const fetchRequest = new Request(targetUrl.toString(), {
-        method: request.method,
-        headers: headers,
-        body: request.body,
-      });
+      // Create the fetch request with the target URL and the original request
+      const fetchRequest = new Request(targetUrl.toString(), request);
 
       logDebug('gateway:proxy', `Proxying request to: ${targetUrl.toString()}`, { requestId, origin: request.headers.get('Origin') });
 
@@ -113,7 +87,8 @@ export default {
       const responseHeaders = new Headers(targetResponse.headers);
 
       // Add gateway headers
-      responseHeaders.set('X-Api-Gateway', 'true');
+      responseHeaders.set('X-Credits-Remaining', creditResult.remaining.toString());
+      responseHeaders.set('X-Credits-Used', creditResult.used.toString());
       responseHeaders.set('X-Request-ID', requestId);
 
       // Return the response with security headers

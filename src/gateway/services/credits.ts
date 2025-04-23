@@ -1,70 +1,30 @@
-// Credits service for gateway
-
-import type { CreditData, CreditResult } from '@/shared/types';
-import { KV_CREDITS } from '@/shared/utils/kv';
+import type { CreditResult, TargetConfig } from '@/shared/types';
+import { KV_CLIENT_BALANCE } from '@/shared/utils/kv';
 
 /**
- * Process credits for a request - core gateway functionality
+ * Process credits for a request - optimized version
  */
-export async function processCredits(clientId: string, cost: number, env: Env): Promise<CreditResult> {
-  // Get current credit balance
-  const creditData = (await KV_CREDITS.get<CreditData>(clientId, env)) || {
-    balance: 0,
-    lastUpdated: new Date().toISOString(),
-  };
+export async function processCredits(targetConfig: TargetConfig, clientId: string, env: Env): Promise<CreditResult> {
+  // Get the client balance
+  const balance = await KV_CLIENT_BALANCE.getString(clientId, env);
+  const clientBalance = balance ? parseInt(balance) : 0;
 
   // Check if enough credits
-  if (creditData.balance < cost) {
+  if (targetConfig.costInfo.cost < clientBalance) {
     return {
       success: false,
-      remaining: creditData.balance,
+      remaining: clientBalance,
+      used: targetConfig.costInfo.cost,
     };
   }
 
-  // Deduct credits
-  const newBalance = creditData.balance - cost;
-
-  // Update credit balance
-  const updated = {
-    balance: newBalance,
-    lastUpdated: new Date().toISOString(),
-  };
-
-  await KV_CREDITS.put(clientId, updated, env);
+  // Update credits in consolidated gateway data
+  const newBalance = clientBalance - targetConfig.costInfo.cost;
+  await KV_CLIENT_BALANCE.putString(clientId, newBalance.toString(), env);
 
   return {
     success: true,
     remaining: newBalance,
-    used: cost,
+    used: targetConfig.costInfo.cost,
   };
-}
-
-/**
- * Get cost for a request - simple implementation
- */
-export function getRequestCost(path: string): number {
-  // Define costs for different endpoints using patterns
-  const costPatterns: Array<{ pattern: RegExp; cost: number }> = [
-    // Exact matches
-    { pattern: /^\/api\/v1\/simple$/, cost: 1 },
-    { pattern: /^\/api\/v1\/normal$/, cost: 2 },
-    { pattern: /^\/api\/v1\/complex$/, cost: 5 },
-
-    // // Pattern matches
-    // { pattern: /^\/api\/v1\/images\/.*$/, cost: 3 },
-    // { pattern: /^\/api\/v1\/data\/large\/.*$/, cost: 4 },
-
-    // // Catch-all for /api/v2 endpoints
-    // { pattern: /^\/api\/v2\/.*$/, cost: 2 },
-  ];
-
-  // Find matching pattern
-  for (const { pattern, cost } of costPatterns) {
-    if (pattern.test(path)) {
-      return cost;
-    }
-  }
-
-  // Default cost for unmatched endpoints
-  return 1;
 }
