@@ -42,7 +42,7 @@ export default {
       }
 
       // Log the admin request
-      logDebug('admin:main', `${request.method} ${request.url}`, { requestId, origin: request.headers.get('Origin') });
+      logDebug('admin', `${request.method} ${request.url}`, { requestId, origin: request.headers.get('Origin') });
 
       // Route to the appropriate handler based on path
       const url = new URL(request.url);

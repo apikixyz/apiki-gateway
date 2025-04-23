@@ -79,7 +79,7 @@ export default {
       // Create the fetch request with the target URL and the original request
       const fetchRequest = new Request(targetUrl, request);
 
-      logDebug('gateway:main', `Proxying request to: ${request.method} ${targetUrl.toString()}`, {
+      logDebug('gateway', `Proxying request: ${request.method} ${targetUrl.toString()}`, {
         requestId,
         origin: request.headers.get('Origin'),
       });
