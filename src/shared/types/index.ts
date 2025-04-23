@@ -3,11 +3,6 @@ export interface ApiKeyConfig {
   expiresAt: number | null;
   clientId: string;
   targetId: string;
-  // overrides: {
-  //   [targetId: string]: {
-  //     costMultiplier: number;
-  //   };
-  // };
 }
 
 export interface TargetConfig {

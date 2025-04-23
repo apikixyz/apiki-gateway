@@ -77,14 +77,17 @@ export default {
       });
 
       // Create the fetch request with the target URL and the original request
-      const fetchRequest = new Request(targetUrl.toString(), request);
+      const fetchRequest = new Request(targetUrl, request);
 
-      logDebug('gateway:proxy', `Proxying request to: ${targetUrl.toString()}`, { requestId, origin: request.headers.get('Origin') });
+      logDebug('gateway:main', `Proxying request to: ${request.method} ${targetUrl.toString()}`, {
+        requestId,
+        origin: request.headers.get('Origin'),
+      });
 
       // Forward the request to the target
       const targetResponse = await fetch(fetchRequest);
 
-      // Clone the response to modify it
+      // Clone the response headers to modify them
       const responseHeaders = new Headers(targetResponse.headers);
 
       // Add gateway headers
