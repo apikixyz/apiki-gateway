@@ -1,7 +1,7 @@
 import type { ApiKeyConfig } from '@/shared/types';
 import { errorResponse, successResponse } from '@/shared/utils/response';
 
-import { createApiKey, getApiKey, updateApiKey, deleteApiKey } from '../services/apiKey';
+import { createApiKey, getApiKeyConfig, updateApiKey, deleteApiKey } from '../services/apiKey';
 
 /**
  * Handle API Key management requests
@@ -21,7 +21,7 @@ export async function handleApiKeyRequest(request: Request, env: Env): Promise<R
 
       // Get an API key
       if (method === 'GET') {
-        const apiKeyConfig = await getApiKey(apiKeyId, env);
+        const apiKeyConfig = await getApiKeyConfig(apiKeyId, env);
         if (!apiKeyConfig) {
           return errorResponse(404, 'API Key not found');
         }

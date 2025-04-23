@@ -4,11 +4,11 @@ import { KV_API_KEY } from '@/shared/utils/kv';
 import { logDebug } from '@/shared/utils/logging';
 
 /**
- * Get an API key by its ID
+ * Get an API key config
  */
-export async function getApiKey(apiKeyId: string, env: Env): Promise<ApiKeyConfig | null> {
+export async function getApiKeyConfig(apiKey: string, env: Env): Promise<ApiKeyConfig | null> {
   try {
-    return await KV_API_KEY.get<ApiKeyConfig>(apiKeyId, env);
+    return await KV_API_KEY.get<ApiKeyConfig>(apiKey, env);
   } catch (error) {
     console.error('Error getting API key:', error);
     return null;
@@ -16,9 +16,9 @@ export async function getApiKey(apiKeyId: string, env: Env): Promise<ApiKeyConfi
 }
 
 /**
- * Create a new API key for a client
+ * Create a new API key config for a client
  */
-export async function createApiKey(
+export async function createApiKeyConfig(
   clientId: string,
   options: Pick<ApiKeyConfig, 'expiresAt' | 'targetId'>,
   env: Env
@@ -28,21 +28,21 @@ export async function createApiKey(
     const apiKey = generateApiKey();
 
     // Prepare API key data
-    const apiKeyData: ApiKeyConfig = {
+    const apiKeyConfig: ApiKeyConfig = {
       clientId,
       active: true,
       expiresAt: options.expiresAt || null,
       targetId: options.targetId,
     };
 
-    // Store the API key
-    await KV_API_KEY.put(apiKey, apiKeyData, env);
+    // Store the API key config
+    await KV_API_KEY.put(apiKey, apiKeyConfig, env);
 
-    logDebug('admin', `Created new API key for client ${clientId}`);
+    logDebug('admin', `Created new API key config for client ${clientId}`);
 
-    return apiKeyData;
+    return apiKeyConfig;
   } catch (error) {
-    console.error('Error creating API key:', error);
+    console.error('Error creating API key config:', error);
     throw error;
   }
 }
@@ -50,14 +50,14 @@ export async function createApiKey(
 /**
  * Update an API key
  */
-export async function updateApiKey(
-  apiKeyId: string,
+export async function updateApiKeyConfig(
+  apiKey: string,
   updates: Pick<ApiKeyConfig, 'active' | 'expiresAt'>,
   env: Env
 ): Promise<ApiKeyConfig | null> {
   try {
-    // Get the current API key data
-    const currentData = await KV_API_KEY.get<ApiKeyConfig>(apiKeyId, env);
+    // Get the current API key config
+    const currentData = await KV_API_KEY.get<ApiKeyConfig>(apiKey, env);
 
     if (!currentData) {
       return null;
@@ -69,14 +69,14 @@ export async function updateApiKey(
       ...updates,
     };
 
-    // Store the updated API key
-    await KV_API_KEY.put(apiKeyId, updatedData, env);
+    // Store the updated API key config
+    await KV_API_KEY.put(apiKey, updatedData, env);
 
-    logDebug('admin', `Updated API key ${apiKeyId}`);
+    logDebug('admin', `Updated API key config for client ${currentData.clientId}`);
 
     return updatedData;
   } catch (error) {
-    console.error('Error updating API key:', error);
+    console.error('Error updating API key config:', error);
     return null;
   }
 }
@@ -84,23 +84,23 @@ export async function updateApiKey(
 /**
  * Delete an API key
  */
-export async function deleteApiKey(apiKeyId: string, env: Env): Promise<boolean> {
+export async function deleteApiKeyConfig(apiKey: string, env: Env): Promise<boolean> {
   try {
     // Get the API key data first (to get the client ID)
-    const apiKeyData = await KV_API_KEY.get<ApiKeyConfig>(apiKeyId, env);
+    const apiKeyData = await KV_API_KEY.get<ApiKeyConfig>(apiKey, env);
 
     if (!apiKeyData) {
       return false;
     }
 
     // Delete the API key
-    await KV_API_KEY.delete(apiKeyId, env);
+    await KV_API_KEY.delete(apiKey, env);
 
-    logDebug('admin', `Deleted API key ${apiKeyId}`);
+    logDebug('admin', `Deleted API key config for client ${apiKeyData.clientId}`);
 
     return true;
   } catch (error) {
-    console.error('Error deleting API key:', error);
+    console.error('Error deleting API key config:', error);
     return false;
   }
 }
