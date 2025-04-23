@@ -4,6 +4,61 @@ import { errorResponse, successResponse } from '@/shared/utils/response';
 import { createApiKeyConfig, deleteApiKeyConfig, getApiKeyConfig, updateApiKeyConfig } from '../services/apiKey';
 
 /**
+ * Validates API key configuration values
+ * @param config The API key configuration to validate
+ * @param isUpdate Whether this is for an update operation (different required fields)
+ * @returns Error message if validation fails, null if validation passes
+ */
+function validateApiKeyConfig(config: Partial<ApiKeyConfig>, isUpdate = false): string | null {
+  // Validate required fields for creation
+  if (!isUpdate) {
+    if (!config.clientId) {
+      return 'Client ID is required';
+    }
+
+    if (!config.targetId) {
+      return 'Target ID is required';
+    }
+
+    if (!config.expiresAt) {
+      return 'Expires At is required';
+    }
+  }
+
+  // Validate active field if present
+  if (config.active !== undefined && typeof config.active !== 'boolean') {
+    return 'Active must be a boolean';
+  }
+
+  // Validate expiresAt if present
+  if (config.expiresAt) {
+    // Convert string dates to numbers if needed
+    const expiresAtValue = typeof config.expiresAt === 'string' ? new Date(config.expiresAt).getTime() : config.expiresAt;
+
+    if (isNaN(expiresAtValue)) {
+      return 'Expires At must be a valid date';
+    }
+
+    if (expiresAtValue < Date.now()) {
+      return 'Expires At cannot be in the past';
+    }
+
+    if (expiresAtValue > Date.now() + 31536000000) {
+      // 1 year in milliseconds
+      return 'Expires At cannot be more than 1 year from now';
+    }
+
+    if (expiresAtValue < Date.now() + 60000) {
+      // 1 minute in milliseconds
+      return 'Expires At cannot be less than 1 minute from now';
+    }
+  }
+
+  // Validation passed
+  return null;
+}
+
+/**
  * Handle API Key management requests
  */
 export async function handleApiKeyRequest(request: Request, env: Env): Promise<Response> {
@@ -32,6 +87,14 @@ export async function handleApiKeyRequest(request: Request, env: Env): Promise<R
       // Update an API key config
       if (method === 'PUT') {
         const newApiKeyConfig = (await request.json()) as Pick<ApiKeyConfig, 'active' | 'expiresAt'>;
+
+        // Validate the request body
+        const validationError = validateApiKeyConfig(newApiKeyConfig, true);
+        if (validationError) {
+          return errorResponse(400, validationError);
+        }
+
+        // Update the API key config
         const updatedApiKeyConfig = await updateApiKeyConfig(apiKeyId, newApiKeyConfig, env);
         if (!updatedApiKeyConfig) {
           return errorResponse(404, 'API Key not found');
@@ -55,8 +118,10 @@ export async function handleApiKeyRequest(request: Request, env: Env): Promise<R
     if (method === 'POST' && path === '/admin/api-keys') {
       const apiKeyConfig = (await request.json()) as Pick<ApiKeyConfig, 'clientId' | 'targetId' | 'expiresAt'>;
 
-      if (!apiKeyConfig.clientId) {
-        return errorResponse(400, 'Client ID is required');
+      // Validate the request body
+      const validationError = validateApiKeyConfig(apiKeyConfig);
+      if (validationError) {
+        return errorResponse(400, validationError);
       }
 
       // Create a new API key config

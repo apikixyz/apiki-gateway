@@ -39,7 +39,7 @@ export function errorResponse(
   request?: Request,
   env?: Env
 ): Response {
-  const responseMessage = PRODUCTION_ERROR_MESSAGES[status] || message;
+  const responseMessage = message || PRODUCTION_ERROR_MESSAGES[status];
   const headers = getResponseHeaders(extraHeaders, request, env);
   return Response.json({ error: responseMessage, code: status }, { status, headers });
 }
