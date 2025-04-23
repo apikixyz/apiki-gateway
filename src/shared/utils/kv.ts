@@ -112,4 +112,4 @@ class KeyPrefix {
 
 // Export key prefixes with optimized methods
 export const KV_API_KEY = new KeyPrefix('apikey');
-export const KV_CLIENT_BALANCE = new KeyPrefix('client_balance');
+export const KV_CREDITS = new KeyPrefix('credits');

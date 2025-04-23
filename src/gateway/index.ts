@@ -26,12 +26,13 @@ export default {
         return errorResponse(401, 'API key required', { 'X-Request-ID': requestId }, request, env);
       }
 
-      // Validate API key and get the config for the target
+      // Validate API key and get the config
       const apiKeyConfig = await getApiKeyConfig(apiKey, env);
       if (!apiKeyConfig || !apiKeyConfig.clientId || !apiKeyConfig.targetId) {
         return errorResponse(403, 'Invalid API key', { 'X-Request-ID': requestId }, request, env);
       }
 
+      // Check if the API key is active and not expired
       if (!apiKeyConfig.active || (apiKeyConfig.expiresAt && apiKeyConfig.expiresAt < Date.now())) {
         return errorResponse(403, 'API key expired or inactive', { 'X-Request-ID': requestId }, request, env);
       }
@@ -39,7 +40,7 @@ export default {
       // Get the target config by API key
       const targetConfig = getTargetConfig(apiKeyConfig.targetId);
       if (!targetConfig) {
-        return errorResponse(404, 'Target config not found for this API key', { 'X-Request-ID': requestId }, request, env);
+        return errorResponse(404, 'Target not found for this API key', { 'X-Request-ID': requestId }, request, env);
       }
 
       // Check if the path matches the target pattern
@@ -49,7 +50,7 @@ export default {
         return errorResponse(404, 'Target not found for this path', { 'X-Request-ID': requestId }, request, env);
       }
 
-      // Check credits for the client to see if we can process the request
+      // Check if the client has enough credits to process the request
       const creditResult = await processCredits(targetConfig, apiKeyConfig.clientId, env);
 
       // If not enough credits, return a 429 error

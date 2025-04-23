@@ -1,26 +1,26 @@
 import type { CreditResult, TargetConfig } from '@/shared/types';
-import { KV_CLIENT_BALANCE } from '@/shared/utils/kv';
+import { KV_CREDITS } from '@/shared/utils/kv';
 
 /**
- * Process credits for a request - optimized version
+ * Process credits for a request
  */
 export async function processCredits(targetConfig: TargetConfig, clientId: string, env: Env): Promise<CreditResult> {
   // Get the client balance
-  const balance = await KV_CLIENT_BALANCE.getString(clientId, env);
+  const balance = await KV_CREDITS.getString(clientId, env);
   const clientBalance = balance ? parseInt(balance) : 0;
 
-  // Check if enough credits
-  if (targetConfig.costInfo.cost < clientBalance) {
+  // Check if the client has enough credits
+  if (targetConfig.costInfo.cost > clientBalance) {
     return {
       success: false,
       remaining: clientBalance,
-      used: targetConfig.costInfo.cost,
+      used: 0,
     };
   }
 
-  // Update credits in consolidated gateway data
+  // Update the client balance
   const newBalance = clientBalance - targetConfig.costInfo.cost;
-  await KV_CLIENT_BALANCE.putString(clientId, newBalance.toString(), env);
+  await KV_CREDITS.putString(clientId, newBalance.toString(), env);
 
   return {
     success: true,

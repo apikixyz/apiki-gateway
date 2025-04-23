@@ -20,6 +20,13 @@ export function matchTargetPattern(path: string, config: TargetConfig): boolean 
       const prefix = config.pattern.slice(0, -1);
       return path.startsWith(prefix);
     }
+
+    // Exact matching with trailing slash
+    if (config.pattern.endsWith('/')) {
+      const pattern = config.pattern.slice(0, -1);
+      return path === pattern;
+    }
+
     return path === config.pattern;
   }
 }
