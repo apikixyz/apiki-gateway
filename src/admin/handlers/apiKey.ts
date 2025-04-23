@@ -1,7 +1,7 @@
 import type { ApiKeyConfig } from '@/shared/types';
 import { errorResponse, successResponse } from '@/shared/utils/response';
 
-import { createApiKey, getApiKeyConfig, updateApiKey, deleteApiKey } from '../services/apiKey';
+import { createApiKeyConfig, deleteApiKeyConfig, getApiKeyConfig, updateApiKeyConfig } from '../services/apiKey';
 
 /**
  * Handle API Key management requests
@@ -19,7 +19,7 @@ export async function handleApiKeyRequest(request: Request, env: Env): Promise<R
         return errorResponse(400, 'Invalid API Key ID');
       }
 
-      // Get an API key
+      // Get an API key config
       if (method === 'GET') {
         const apiKeyConfig = await getApiKeyConfig(apiKeyId, env);
         if (!apiKeyConfig) {
@@ -29,10 +29,10 @@ export async function handleApiKeyRequest(request: Request, env: Env): Promise<R
         return successResponse({ apiKeyConfig });
       }
 
-      // Update an API key
+      // Update an API key config
       if (method === 'PUT') {
         const newApiKeyConfig = (await request.json()) as Pick<ApiKeyConfig, 'active' | 'expiresAt'>;
-        const updatedApiKeyConfig = await updateApiKey(apiKeyId, newApiKeyConfig, env);
+        const updatedApiKeyConfig = await updateApiKeyConfig(apiKeyId, newApiKeyConfig, env);
         if (!updatedApiKeyConfig) {
           return errorResponse(404, 'API Key not found');
         }
@@ -40,8 +40,9 @@ export async function handleApiKeyRequest(request: Request, env: Env): Promise<R
         return successResponse({ apiKeyConfig: updatedApiKeyConfig });
       }
 
+      // Delete an API key config
       if (method === 'DELETE') {
-        const success = await deleteApiKey(apiKeyId, env);
+        const success = await deleteApiKeyConfig(apiKeyId, env);
         if (!success) {
           return errorResponse(404, 'API Key not found');
         }
@@ -58,7 +59,8 @@ export async function handleApiKeyRequest(request: Request, env: Env): Promise<R
         return errorResponse(400, 'Client ID is required');
       }
 
-      const result = await createApiKey(apiKeyConfig.clientId, apiKeyConfig, env);
+      // Create a new API key config
+      const result = await createApiKeyConfig(apiKeyConfig.clientId, apiKeyConfig, env);
       return successResponse({ apiKeyConfig: result }, 201);
     }
 
