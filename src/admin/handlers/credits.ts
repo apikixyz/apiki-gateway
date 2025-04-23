@@ -1,5 +1,5 @@
 import { errorResponse, successResponse } from '@/shared/utils/response';
-import { getCreditsByClientId, updateCreditsByClientId } from '../services/credits';
+import { getCreditsByClientId, setCreditsByClientId } from '../services/credits';
 
 /**
  * Handle credits management requests
@@ -26,9 +26,16 @@ export async function handleCreditRequest(request: Request, env: Env): Promise<R
       // Update a credit info
       if (method === 'PUT') {
         const { credits } = (await request.json()) as { credits: number };
-        await updateCreditsByClientId(clientId, credits, env);
+        await setCreditsByClientId(clientId, credits, env);
         return successResponse({ clientId, credits });
       }
+    }
+
+    // POST /admin/credits - Create a new credit balance for a client
+    if (method === 'POST' && path === '/admin/credits') {
+      const { clientId, credits } = (await request.json()) as { clientId: string; credits: number };
+      await setCreditsByClientId(clientId, credits, env);
+      return successResponse({ clientId, credits });
     }
 
     // If no route matches

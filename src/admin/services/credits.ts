@@ -10,8 +10,8 @@ export async function getCreditsByClientId(clientId: string, env: Env): Promise<
 }
 
 /**
- * Update credits by client ID
+ * Set credits by client ID. If the client ID does not exist, it will be created.
  */
-export async function updateCreditsByClientId(clientId: string, credits: number, env: Env): Promise<void> {
+export async function setCreditsByClientId(clientId: string, credits: number, env: Env): Promise<void> {
   await KV_CREDITS.putString(clientId, credits.toString(), env);
 }
