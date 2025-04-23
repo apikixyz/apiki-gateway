@@ -22,7 +22,7 @@ export async function createApiKeyConfig(
   clientId: string,
   options: Pick<ApiKeyConfig, 'expiresAt' | 'targetId'>,
   env: Env
-): Promise<ApiKeyConfig> {
+): Promise<ApiKeyConfig & { apiKey: string }> {
   try {
     // Generate a random API key using shared crypto utility
     const apiKey = generateApiKey();
@@ -40,7 +40,10 @@ export async function createApiKeyConfig(
 
     logDebug('admin', `Created new API key config for client ${clientId}`);
 
-    return apiKeyConfig;
+    return {
+      apiKey,
+      ...apiKeyConfig,
+    };
   } catch (error) {
     console.error('Error creating API key config:', error);
     throw error;

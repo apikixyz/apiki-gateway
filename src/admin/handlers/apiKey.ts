@@ -26,7 +26,7 @@ export async function handleApiKeyRequest(request: Request, env: Env): Promise<R
           return errorResponse(404, 'API Key not found');
         }
 
-        return successResponse({ apiKeyConfig });
+        return successResponse(apiKeyConfig);
       }
 
       // Update an API key config
@@ -37,7 +37,7 @@ export async function handleApiKeyRequest(request: Request, env: Env): Promise<R
           return errorResponse(404, 'API Key not found');
         }
 
-        return successResponse({ apiKeyConfig: updatedApiKeyConfig });
+        return successResponse(updatedApiKeyConfig);
       }
 
       // Delete an API key config
@@ -61,7 +61,7 @@ export async function handleApiKeyRequest(request: Request, env: Env): Promise<R
 
       // Create a new API key config
       const result = await createApiKeyConfig(apiKeyConfig.clientId, apiKeyConfig, env);
-      return successResponse({ apiKeyConfig: result }, 201);
+      return successResponse(result, 201);
     }
 
     // If no route matches
