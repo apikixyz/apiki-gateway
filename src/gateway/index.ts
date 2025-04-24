@@ -72,14 +72,24 @@ export default {
 
       // Build the target URL
       const targetUrl = new URL(path, targetConfig.targetUrl);
-
-      // Copy query parameters
-      url.searchParams.forEach((value, key) => {
-        targetUrl.searchParams.append(key, value);
-      });
+      targetUrl.search = url.search;
 
       // Create the fetch request with the target URL and the original request
-      const fetchRequest = new Request(targetUrl, request);
+      const fetchRequest = new Request(targetUrl, {
+        method: request.method,
+        headers: request.headers,
+        body: request.body,
+        redirect: 'follow',
+      });
+
+      // Modify headers to bypass Cloudflare security
+      // Remove headers that might trigger Cloudflare security
+      fetchRequest.headers.delete('cf-connecting-ip');
+      fetchRequest.headers.delete('cf-ipcountry');
+      fetchRequest.headers.delete('cf-ray');
+      fetchRequest.headers.delete('cf-visitor');
+      fetchRequest.headers.delete('x-forwarded-for');
+      fetchRequest.headers.delete('x-forwarded-proto');
 
       logDebug('gateway', `Proxying request: ${request.method} ${targetUrl.toString()}`, {
         requestId,
@@ -89,24 +99,14 @@ export default {
       // Forward the request to the target
       const targetResponse = await fetch(fetchRequest);
 
-      // Clone the response headers to modify them
-      const responseHeaders = new Headers(targetResponse.headers);
-
-      // Add gateway headers
-      responseHeaders.set('X-Credits-Remaining', creditResult.remaining.toString());
-      responseHeaders.set('X-Credits-Used', creditResult.used.toString());
-      responseHeaders.set('X-Request-ID', requestId);
+      // Clone the response and add a custom gateway headers
+      const modifiedResponse = new Response(targetResponse.body, targetResponse);
+      modifiedResponse.headers.set('X-Credits-Remaining', creditResult.remaining.toString());
+      modifiedResponse.headers.set('X-Credits-Used', creditResult.used.toString());
+      modifiedResponse.headers.set('X-Request-ID', requestId);
 
       // Return the response with security headers
-      return secureResponse(
-        new Response(targetResponse.body, {
-          status: targetResponse.status,
-          statusText: targetResponse.statusText,
-          headers: responseHeaders,
-        }),
-        request,
-        env
-      );
+      return secureResponse(modifiedResponse, request, env);
     } catch (error: unknown) {
       console.error(`Gateway error (${requestId}):`, error instanceof Error ? error.message : String(error));
       return errorResponse(
