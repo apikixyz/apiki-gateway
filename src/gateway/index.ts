@@ -1,5 +1,6 @@
 // APIKI Gateway - Cloudflare Worker for simple API Key Validation and Usage Credit Management
 
+import type { CreditResult } from '@/shared/types';
 import { logDebug } from '@/shared/utils/logging';
 import { errorResponse, handleCors, secureResponse } from '@/shared/utils/response';
 
@@ -13,6 +14,7 @@ import { getTargetConfig, matchTargetPattern } from './services/target';
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const requestId = crypto.randomUUID().slice(0, 8); // Short ID for tracking
+    let creditResult: CreditResult = { success: true, remaining: 0, used: 0 };
 
     try {
       // Skip CORS preflight requests
@@ -51,7 +53,7 @@ export default {
       }
 
       // Check if the client has enough credits to process the request
-      const creditResult = await processCredits(targetConfig, apiKeyConfig.clientId, env);
+      creditResult = await processCredits(targetConfig, apiKeyConfig.clientId, env);
 
       // If not enough credits, return a 402 (Payment Required) error
       if (!creditResult.success) {
@@ -107,7 +109,17 @@ export default {
       );
     } catch (error: unknown) {
       console.error(`Gateway error (${requestId}):`, error instanceof Error ? error.message : String(error));
-      return errorResponse(500, 'Internal Server Error', { 'X-Request-ID': requestId }, request, env);
+      return errorResponse(
+        500,
+        'Internal Server Error',
+        {
+          'X-Credits-Remaining': creditResult.remaining.toString(),
+          'X-Credits-Used': creditResult.used.toString(),
+          'X-Request-ID': requestId,
+        },
+        request,
+        env
+      );
     }
   },
 } as ExportedHandler<Env>;
