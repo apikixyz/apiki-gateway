@@ -6,7 +6,7 @@ import { errorResponse, handleCors, secureResponse } from '@/shared/utils/respon
 
 import { getApiKeyConfig } from './services/apiKey';
 import { processCredits } from './services/credits';
-import { getTargetConfig, matchTargetPattern } from './services/target';
+import { getTargetConfig, matchTargetPattern, extractRelativePath } from './services/target';
 
 /**
  * Main entry point for the API Gateway Worker
@@ -70,9 +70,18 @@ export default {
         );
       }
 
-      // Build the target URL
-      const targetUrl = new URL(path, targetConfig.targetUrl);
+      // Build the target URL with the relative path
+      const relativePath = extractRelativePath(path, targetConfig);
+
+      // Remove trailing slash from relativePath (except for root path '/')
+      const cleanRelativePath = relativePath.length > 1 && relativePath.endsWith('/') ? relativePath.slice(0, -1) : relativePath;
+
+      // Remove trailing slash from targetUrl if it exists
+      const targetUrlBase = targetConfig.targetUrl.endsWith('/') ? targetConfig.targetUrl.slice(0, -1) : targetConfig.targetUrl;
+
+      const targetUrl = new URL(`${targetUrlBase}${cleanRelativePath}`);
       targetUrl.search = url.search;
+      console.log('targetUrl', targetUrl.toString(), targetConfig.targetUrl, cleanRelativePath);
 
       // Create the fetch request with the target URL and the original request
       const fetchRequest = new Request(targetUrl, {
