@@ -53,10 +53,10 @@ export default {
       // Check if the client has enough credits to process the request
       const creditResult = await processCredits(targetConfig, apiKeyConfig.clientId, env);
 
-      // If not enough credits, return a 429 error
+      // If not enough credits, return a 402 (Payment Required) error
       if (!creditResult.success) {
         return errorResponse(
-          429,
+          402,
           'Insufficient credits',
           {
             'X-Credits-Remaining': creditResult.remaining.toString(),
